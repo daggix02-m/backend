@@ -1,7 +1,8 @@
 # PharmaCare Backend API Endpoints Documentation
 
 **Version:** 1.0.0  
-**Base URL:** `http://localhost:3000/api`  
+**Base URL:** `http://localhost:3000/api` (Development)  
+**Base URL:** `https://backend-21.vercel.app/api` (Production)  
 **Last Updated:** 2026-02-17
 
 ---

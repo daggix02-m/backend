@@ -1,6 +1,7 @@
 # API Endpoints Summary - Quick Reference
 
-**Base URL:** `http://localhost:3000/api`
+**Base URL:** `http://localhost:3000/api` (Development)  
+**Base URL:** `https://backend-21.vercel.app/api` (Production)
 
 ---
 
