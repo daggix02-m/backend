@@ -1,0 +1,92 @@
+import express, { Application, Request, Response } from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import morgan from 'morgan';
+import dotenv from 'dotenv';
+import swaggerUi from 'swagger-ui-express';
+
+import authRoutes from './routes/auth';
+import pharmacyRoutes from './routes/pharmacies';
+import userRoutes from './routes/users';
+import inventoryRoutes from './routes/inventory';
+import salesRoutes from './routes/sales';
+import refundRoutes from './routes/refunds';
+import shiftRoutes from './routes/shifts';
+import paymentRoutes from './routes/payments';
+import { authenticate } from './middleware/auth';
+import { config } from './config';
+import { swaggerSpec } from './config/swagger';
+
+dotenv.config();
+
+const app: Application = express();
+
+// Middleware
+app.use(helmet());
+app.use(cors({
+  origin: config.corsOrigin,
+  credentials: true,
+}));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Logging
+if (config.nodeEnv === 'development') {
+  app.use(morgan('dev'));
+} else {
+  app.use(morgan('combined'));
+}
+
+// Health check
+app.get('/health', (req: Request, res: Response) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Swagger API Documentation
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+  customSiteTitle: 'PharmaCare API Documentation',
+  customCss: '.swagger-ui .topbar { display: none }',
+  swaggerOptions: {
+    persistAuthorization: true,
+    docExpansion: 'none',
+    filter: true,
+    showRequestDuration: true,
+  },
+}));
+
+// API JSON spec
+app.get('/api-docs.json', (req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.send(swaggerSpec);
+});
+
+// API Routes
+app.use('/api/auth', authRoutes);
+app.use('/api/pharmacies', pharmacyRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/inventory', inventoryRoutes);
+app.use('/api/sales', salesRoutes);
+app.use('/api/refunds', refundRoutes);
+app.use('/api/shifts', shiftRoutes);
+app.use('/api/payments', paymentRoutes);
+
+// Protected route example
+app.get('/api/protected', authenticate, (req: Request, res: Response) => {
+  res.json({ message: 'This is a protected route' });
+});
+
+// 404 handler
+app.use((req: Request, res: Response) => {
+  res.status(404).json({ error: 'Route not found' });
+});
+
+// Error handler
+app.use((err: any, req: Request, res: Response, next: any) => {
+  console.error(err.stack);
+  res.status(err.status || 500).json({
+    error: err.message || 'Internal server error',
+    ...(config.nodeEnv === 'development' && { stack: err.stack }),
+  });
+});
+
+export default app;
