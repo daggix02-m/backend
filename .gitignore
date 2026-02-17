@@ -70,3 +70,5 @@ debug.log
 
 # Plans folder
 plans/
+
+.vercel
