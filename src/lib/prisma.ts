@@ -6,7 +6,7 @@ const prisma = new PrismaClient({
 
 // Optimize for serverless - connect on first use in production
 if (process.env.NODE_ENV === 'production') {
-  prisma.$connect().catch((error) => {
+  prisma.$connect().catch((error: unknown) => {
     console.error('Failed to connect to database:', error);
   });
 }
