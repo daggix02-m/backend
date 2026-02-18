@@ -3,6 +3,21 @@ import { Database } from '../types/database.types';
 
 type Supabase = SupabaseClient<Database>;
 
+function camelToSnake(str: string): string {
+  return str.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+}
+
+function convertToSnakeCase(obj: any): any {
+  if (!obj || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) return obj.map(convertToSnakeCase);
+  
+  const result: any = {};
+  for (const [key, value] of Object.entries(obj)) {
+    result[camelToSnake(key)] = typeof value === 'object' && value !== null ? convertToSnakeCase(value) : value;
+  }
+  return result;
+}
+
 type WhereInput<T> = Partial<T> & {
   id?: number;
 };
@@ -51,16 +66,25 @@ interface DeleteOptions {
 
 function getTableName(modelName: string): string {
   const mapping: Record<string, string> = {
-    user: 'user',
-    pharmacy: 'pharmacy',
-    branch: 'branch',
-    role: 'role',
-    userRole: 'user_role',
-    userBranch: 'user_branch',
-    sale: 'sale',
-    payment: 'payment',
-    paymentTransaction: 'payment_transaction',
-    cashierShift: 'cashier_shift',
+    user: 'users',
+    pharmacy: 'pharmacies',
+    branch: 'branches',
+    role: 'roles',
+    userRole: 'user_roles',
+    userBranch: 'user_branches',
+    sale: 'sales',
+    payment: 'payments',
+    paymentTransaction: 'payment_transactions',
+    cashierShift: 'cashier_shifts',
+    stock: 'stocks',
+    medicine: 'medicines',
+    medicineCategory: 'medicine_categories',
+    medicineBatch: 'medicine_batches',
+    saleItem: 'sale_items',
+    refund: 'refunds',
+    refundItem: 'refund_items',
+    stockMovement: 'stock_movements',
+    paymentMethod: 'payment_methods',
   };
   return mapping[modelName] || modelName;
 }
@@ -119,7 +143,8 @@ function createModelHandler(client: Supabase, modelName: string) {
       let query = client.from(tableName as any).select('*');
       
       if (options.where) {
-        for (const [key, value] of Object.entries(options.where)) {
+        const snakeWhere = convertToSnakeCase(options.where);
+        for (const [key, value] of Object.entries(snakeWhere)) {
           if (value !== undefined) {
             query = query.eq(key, value);
           }
@@ -131,7 +156,8 @@ function createModelHandler(client: Supabase, modelName: string) {
           `*, ${Object.keys(options.include).map(k => `${k} (*)`).join(', ')}`
         );
         if (options.where) {
-          for (const [key, value] of Object.entries(options.where)) {
+          const snakeWhere = convertToSnakeCase(options.where);
+          for (const [key, value] of Object.entries(snakeWhere)) {
             if (value !== undefined) {
               query = query.eq(key, value);
             }
@@ -141,7 +167,7 @@ function createModelHandler(client: Supabase, modelName: string) {
 
       if (options.orderBy) {
         const [column, direction] = Object.entries(options.orderBy)[0];
-        query = query.order(column, { ascending: direction === 'asc' });
+        query = query.order(camelToSnake(column), { ascending: direction === 'asc' });
       }
 
       const { data, error } = await query.limit(1).maybeSingle();
@@ -158,7 +184,8 @@ function createModelHandler(client: Supabase, modelName: string) {
       let query = client.from(tableName as any).select(selectStr);
       
       if (options.where) {
-        for (const [key, value] of Object.entries(options.where)) {
+        const snakeWhere = convertToSnakeCase(options.where);
+        for (const [key, value] of Object.entries(snakeWhere)) {
           if (value !== undefined && value !== null) {
             if (typeof value === 'object' && !Array.isArray(value)) {
               for (const [subKey, subValue] of Object.entries(value)) {
@@ -175,7 +202,7 @@ function createModelHandler(client: Supabase, modelName: string) {
 
       if (options.orderBy) {
         const [column, direction] = Object.entries(options.orderBy)[0];
-        query = query.order(column, { ascending: direction === 'asc' });
+        query = query.order(camelToSnake(column), { ascending: direction === 'asc' });
       }
 
       if (options.skip) {
@@ -192,7 +219,7 @@ function createModelHandler(client: Supabase, modelName: string) {
     create: async <T = any>(options: CreateOptions<any>): Promise<T> => {
       const { data, error } = await client
         .from(tableName as any)
-        .insert(options.data)
+        .insert(convertToSnakeCase(options.data))
         .select()
         .single();
       if (error) throw error;
@@ -201,12 +228,12 @@ function createModelHandler(client: Supabase, modelName: string) {
 
     update: async <T = any>(options: UpdateOptions<any>): Promise<T> => {
       const tableClient = (client as any).from(tableName);
-      let query = tableClient.update(options.data);
+      let query = tableClient.update(convertToSnakeCase(options.data));
       
       if ('id' in options.where) {
         query = query.eq('id', options.where.id);
       } else if ('txRef' in options.where && options.where.txRef) {
-        query = query.eq('txRef', options.where.txRef);
+        query = query.eq('tx_ref', options.where.txRef);
       }
 
       const { data, error } = await query.select().single();
@@ -216,10 +243,11 @@ function createModelHandler(client: Supabase, modelName: string) {
 
     updateMany: async <T = any>(options: UpdateManyOptions<T>): Promise<{ count: number }> => {
       const tableClient = (client as any).from(tableName);
-      let query = tableClient.update(options.data);
+      let query = tableClient.update(convertToSnakeCase(options.data));
       
       if (options.where) {
-        for (const [key, value] of Object.entries(options.where)) {
+        const snakeWhere = convertToSnakeCase(options.where);
+        for (const [key, value] of Object.entries(snakeWhere)) {
           if (value !== undefined && value !== null) {
             query = query.eq(key, value);
           }
@@ -246,7 +274,8 @@ function createModelHandler(client: Supabase, modelName: string) {
       let query = client.from(tableName as any).delete();
       
       if (options.where) {
-        for (const [key, value] of Object.entries(options.where)) {
+        const snakeWhere = convertToSnakeCase(options.where);
+        for (const [key, value] of Object.entries(snakeWhere)) {
           if (value !== undefined && value !== null) {
             query = query.eq(key, value);
           }
@@ -262,7 +291,8 @@ function createModelHandler(client: Supabase, modelName: string) {
       let query = client.from(tableName as any).select('*', { count: 'exact', head: true });
       
       if (options.where) {
-        for (const [key, value] of Object.entries(options.where)) {
+        const snakeWhere = convertToSnakeCase(options.where);
+        for (const [key, value] of Object.entries(snakeWhere)) {
           if (value !== undefined && value !== null) {
             query = query.eq(key, value);
           }
@@ -288,6 +318,15 @@ function createPrismaLikeClient(client: Supabase) {
     'payment',
     'paymentTransaction',
     'cashierShift',
+    'stock',
+    'medicine',
+    'medicineCategory',
+    'medicineBatch',
+    'saleItem',
+    'refund',
+    'refundItem',
+    'stockMovement',
+    'paymentMethod',
   ];
 
   const prismaLike = {} as any;
@@ -295,6 +334,10 @@ function createPrismaLikeClient(client: Supabase) {
   for (const model of models) {
     prismaLike[model] = createModelHandler(client, model);
   }
+  
+  prismaLike.$transaction = async (fn: (tx: any) => Promise<any>) => {
+    return fn(prismaLike);
+  };
 
   return prismaLike;
 }
