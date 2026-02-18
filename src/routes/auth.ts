@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { supabase as supabaseClient } from '../lib/prisma';
 import { AuthUtils } from '../lib/auth';
-import { AuthRequest } from '../middleware/auth';
+import { AuthRequest, authenticate } from '../middleware/auth';
 
 const router = Router();
 const supabase = supabaseClient as any;
@@ -202,7 +202,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
  * @desc    Change user password
  * @access  Private
  */
-router.post('/change-password', async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/change-password', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { currentPassword, newPassword } = req.body;
 
@@ -266,7 +266,7 @@ router.post('/change-password', async (req: AuthRequest, res: Response): Promise
  * @desc    Get current user
  * @access  Private
  */
-router.get('/me', async (req: AuthRequest, res: Response): Promise<void> => {
+router.get('/me', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     if (!req.user) {
       res.status(401).json({ error: 'Not authenticated' });
