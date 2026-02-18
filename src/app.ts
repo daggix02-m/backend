@@ -13,6 +13,14 @@ import salesRoutes from './routes/sales';
 import refundRoutes from './routes/refunds';
 import shiftRoutes from './routes/shifts';
 import paymentRoutes from './routes/payments';
+import adminRoutes from './routes/admin';
+import adminSubscriptionsRoutes from './routes/admin/subscriptions';
+import adminDocumentsRoutes from './routes/admin/documents';
+import managerRoutes from './routes/manager';
+import pharmacistRoutes from './routes/pharmacist';
+import cashierRoutes from './routes/cashier';
+import importRoutes from './routes/import';
+import uploadRoutes from './routes/upload';
 import { authenticate } from './middleware/auth';
 import { authRateLimiter } from './middleware/rateLimit';
 import { config } from './config';
@@ -88,6 +96,20 @@ app.use('/api/sales', salesRoutes);
 app.use('/api/refunds', refundRoutes);
 app.use('/api/shifts', shiftRoutes);
 app.use('/api/payments', paymentRoutes);
+
+// Role-based API Routes (for frontend integration)
+app.use('/api/admin', adminRoutes);
+app.use('/api/admin/subscriptions', adminSubscriptionsRoutes);
+app.use('/api/admin/documents', adminDocumentsRoutes);
+app.use('/api/manager', managerRoutes);
+app.use('/api/pharmacist', pharmacistRoutes);
+app.use('/api/cashier', cashierRoutes);
+
+// Import routes (accessible by manager and pharmacist)
+app.use('/api/import', importRoutes);
+
+// Upload routes
+app.use('/api/upload', uploadRoutes);
 
 // Apply rate limiting to sensitive endpoints
 app.use('/api/auth/login', authRateLimiter);

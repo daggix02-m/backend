@@ -46,18 +46,25 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    // Calculate totals
+    const { data: branch } = await supabase
+      .from('branches')
+      .select('id, pharmacy_id')
+      .eq('id', branchId)
+      .single();
+
+    if (!branch || branch.pharmacy_id !== req.user!.pharmacyId) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
     let totalAmount = 0;
     for (const item of items) {
       totalAmount += item.quantity * item.unitPrice;
     }
     const finalAmount = totalAmount - discountAmount + taxAmount;
 
-    // Use Supabase transaction for sale and stock updates
     const { data: sale, error: saleError } = await supabase
       .from('sales')
       .insert({
-        pharmacy_id: req.user!.pharmacyId,
         branch_id: branchId,
         pharmacist_id: req.user!.userId,
         user_id: req.user!.userId,
@@ -80,9 +87,7 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
       return res.status(500).json({ error: 'Failed to create sale' });
     }
 
-    // Create SaleItems and update stock
     for (const item of items) {
-      // Create sale item
       const { error: itemError } = await supabase
         .from('sale_items')
         .insert({
@@ -98,7 +103,6 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
         console.error('Error creating sale item:', itemError);
       }
 
-      // Update branch stock
       const { data: stock } = await supabase
         .from('stocks')
         .select('id, quantity')
@@ -135,8 +139,13 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
 
     const { data: sales, error } = await supabase
       .from('sales')
-      .select('*')
-      .eq('pharmacy_id', req.user!.pharmacyId)
+      .select(`
+        *,
+        branches (
+          id,
+          pharmacy_id
+        )
+      `)
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -144,7 +153,7 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
       return res.json([]);
     }
 
-    let result = sales || [];
+    let result = (sales || []).filter((s: any) => s.branches?.pharmacy_id === req.user!.pharmacyId);
     
     if (branchId) {
       result = result.filter((s: any) => s.branch_id === parseInt(branchId as string));

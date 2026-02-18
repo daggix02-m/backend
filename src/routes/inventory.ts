@@ -135,7 +135,7 @@ router.get('/stocks', authenticate, async (req: AuthRequest, res: Response) => {
     const { branchId } = req.query;
 
     const { data: stocks, error } = await supabase
-      .from('stock')
+      .from('stocks')
       .select('*');
 
     if (error) {

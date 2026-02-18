@@ -1,14 +1,10 @@
 import { Router, Response } from 'express';
-import { prisma } from '../lib/prisma';
+import { supabase as supabaseClient } from '../lib/supabase';
 import { AuthRequest, authenticate, authorize } from '../middleware/auth';
 
 const router = Router();
+const supabase = supabaseClient as any;
 
-/**
- * @route   POST /api/refunds
- * @desc    Create a refund for a sale
- * @access  Private (Admin/Manager/Pharmacist)
- */
 router.post('/', authenticate, authorize('admin', 'manager', 'pharmacist'), async (req: AuthRequest, res: Response) => {
   try {
     const { saleId, reason, items } = req.body;
@@ -17,12 +13,13 @@ router.post('/', authenticate, authorize('admin', 'manager', 'pharmacist'), asyn
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    const sale = await prisma.sale.findUnique({
-      where: { id: saleId },
-      include: { items: true }
-    });
+    const { data: sale } = await supabase
+      .from('sales')
+      .select('id, branch_id, pharmacy_id')
+      .eq('id', saleId)
+      .single();
 
-    if (!sale || sale.pharmacyId !== req.user!.pharmacyId) {
+    if (!sale || sale.pharmacy_id !== req.user!.pharmacyId) {
       return res.status(404).json({ error: 'Sale not found' });
     }
 
@@ -31,47 +28,43 @@ router.post('/', authenticate, authorize('admin', 'manager', 'pharmacist'), asyn
       refundAmount += item.quantity * item.unitPrice;
     }
 
-    const refund = await prisma.$transaction(async (tx: any) => {
-      // 1. Create Refund record
-      const newRefund = await tx.refund.create({
-        data: {
-          saleId,
-          pharmacyId: req.user!.pharmacyId,
-          branchId: sale.branchId,
-          userId: req.user!.userId,
-          reason,
-          refundAmount,
-          status: 'COMPLETED'
-        }
-      });
+    const { data: refund, error: refundError } = await supabase
+      .from('refunds')
+      .insert({
+        sale_id: saleId,
+        pharmacy_id: req.user!.pharmacyId,
+        amount: refundAmount,
+        reason,
+        status: 'COMPLETED',
+        processed_by: req.user!.userId,
+        created_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
 
-      // 2. Create RefundItems and update stock
-      for (const item of items) {
-        await tx.refundItem.create({
-          data: {
-            refundId: newRefund.id,
-            medicineId: item.medicineId,
-            quantity: item.quantity,
-            unitPrice: item.unitPrice,
-            totalPrice: item.quantity * item.unitPrice
-          }
-        });
+    if (refundError) {
+      console.error('Error creating refund:', refundError);
+      return res.status(500).json({ error: 'Failed to create refund' });
+    }
 
-        // Add items back to stock
-        await tx.stock.update({
-          where: {
-            id: (await tx.stock.findFirst({
-              where: { medicineId: item.medicineId, branchId: sale.branchId }
-            })).id
-          },
-          data: {
-            quantity: { increment: item.quantity }
-          }
-        });
+    for (const item of items) {
+      const { data: stock } = await supabase
+        .from('stocks')
+        .select('id, quantity')
+        .eq('medicine_id', item.medicineId)
+        .eq('branch_id', sale.branch_id)
+        .single();
+
+      if (stock) {
+        await supabase
+          .from('stocks')
+          .update({
+            quantity: stock.quantity + item.quantity,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', stock.id);
       }
-
-      return newRefund;
-    });
+    }
 
     res.status(201).json(refund);
   } catch (error) {
@@ -80,11 +73,6 @@ router.post('/', authenticate, authorize('admin', 'manager', 'pharmacist'), asyn
   }
 });
 
-/**
- * @route   POST /api/inventory/movements
- * @desc    Record a stock movement (adjustment/transfer)
- * @access  Private (Admin/Manager/Pharmacist)
- */
 router.post('/movements', authenticate, authorize('admin', 'manager', 'pharmacist'), async (req: AuthRequest, res: Response) => {
   try {
     const { medicineId, branchId, quantity, type, reason, targetBranchId } = req.body;
@@ -93,49 +81,78 @@ router.post('/movements', authenticate, authorize('admin', 'manager', 'pharmacis
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    const movement = await prisma.$transaction(async (tx: any) => {
-      const newMovement = await tx.stockMovement.create({
-        data: {
-          medicineId,
-          branchId,
-          userId: req.user!.userId,
-          quantity,
-          type, // 'IN', 'OUT', 'TRANSFER', 'ADJUSTMENT'
-          reason,
-          targetBranchId
-        }
-      });
+    const { data: stock, error: stockError } = await supabase
+      .from('stocks')
+      .select('id, quantity')
+      .eq('medicine_id', medicineId)
+      .eq('branch_id', branchId)
+      .single();
 
-      // Update source branch stock
-      const sourceStock = await tx.stock.findFirst({ where: { medicineId, branchId } });
-      if (sourceStock) {
-        await tx.stock.update({
-          where: { id: sourceStock.id },
-          data: {
-            quantity: type === 'IN' ? { increment: quantity } : { decrement: quantity }
-          }
+    if (stockError || !stock) {
+      return res.status(404).json({ error: 'Stock not found' });
+    }
+
+    let newQuantity = stock.quantity;
+    if (type === 'IN') {
+      newQuantity += quantity;
+    } else if (type === 'OUT' || type === 'ADJUSTMENT') {
+      newQuantity -= quantity;
+    }
+
+    const { error: updateError } = await supabase
+      .from('stocks')
+      .update({
+        quantity: newQuantity,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', stock.id);
+
+    if (updateError) {
+      console.error('Error updating stock:', updateError);
+      return res.status(500).json({ error: 'Failed to update stock' });
+    }
+
+    if (type === 'TRANSFER' && targetBranchId) {
+      const { data: targetStock } = await supabase
+        .from('stocks')
+        .select('id, quantity')
+        .eq('medicine_id', medicineId)
+        .eq('branch_id', targetBranchId)
+        .single();
+
+      if (targetStock) {
+        await supabase
+          .from('stocks')
+          .update({
+            quantity: targetStock.quantity + quantity,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', targetStock.id);
+      } else {
+        const { data: pharmacyStock } = await supabase
+          .from('stocks')
+          .select('pharmacy_id')
+          .eq('medicine_id', medicineId)
+          .eq('branch_id', branchId)
+          .single();
+
+        await supabase.from('stocks').insert({
+          medicine_id: medicineId,
+          branch_id: targetBranchId,
+          pharmacy_id: pharmacyStock?.pharmacy_id || req.user!.pharmacyId,
+          quantity,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
         });
       }
+    }
 
-      // If transfer, update target branch stock
-      if (type === 'TRANSFER' && targetBranchId) {
-        const targetStock = await tx.stock.findFirst({ where: { medicineId, branchId: targetBranchId } });
-        if (targetStock) {
-          await tx.stock.update({
-            where: { id: targetStock.id },
-            data: { quantity: { increment: quantity } }
-          });
-        } else {
-          await tx.stock.create({
-            data: { medicineId, branchId: targetBranchId, quantity }
-          });
-        }
-      }
-
-      return newMovement;
+    res.status(201).json({
+      message: 'Stock movement recorded',
+      type,
+      quantity,
+      newQuantity,
     });
-
-    res.status(201).json(movement);
   } catch (error) {
     console.error('Error recording movement:', error);
     res.status(500).json({ error: 'Internal server error' });

@@ -1,14 +1,10 @@
 import { Router, Response } from 'express';
-import { prisma } from '../lib/prisma';
-import { AuthRequest, authenticate, authorize } from '../middleware/auth';
+import { supabase as supabaseClient } from '../lib/supabase';
+import { AuthRequest, authenticate } from '../middleware/auth';
 
 const router = Router();
+const supabase = supabaseClient as any;
 
-/**
- * @route   POST /api/shifts/start
- * @desc    Start a new cashier shift
- * @access  Private
- */
 router.post('/start', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const { branchId, openingBalance } = req.body;
@@ -17,27 +13,34 @@ router.post('/start', authenticate, async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: 'Branch and opening balance are required' });
     }
 
-    // Check if user already has an active shift
-    const activeShift = await prisma.cashierShift.findFirst({
-      where: {
-        userId: req.user!.userId,
-        status: 'OPEN'
-      }
-    });
+    const { data: activeShift } = await supabase
+      .from('cashier_shifts')
+      .select('id')
+      .eq('user_id', req.user!.userId)
+      .eq('status', 'OPEN');
 
-    if (activeShift) {
+    if (activeShift && activeShift.length > 0) {
       return res.status(400).json({ error: 'You already have an active shift' });
     }
 
-    const shift = await prisma.cashierShift.create({
-      data: {
-        userId: req.user!.userId,
-        branchId,
-        startTime: new Date(),
-        openingBalance,
-        status: 'OPEN'
-      }
-    });
+    const { data: shift, error } = await supabase
+      .from('cashier_shifts')
+      .insert({
+        user_id: req.user!.userId,
+        branch_id: branchId,
+        opened_at: new Date().toISOString(),
+        opening_balance: openingBalance,
+        status: 'OPEN',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error starting shift:', error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
 
     res.status(201).json(shift);
   } catch (error) {
@@ -46,11 +49,6 @@ router.post('/start', authenticate, async (req: AuthRequest, res: Response) => {
   }
 });
 
-/**
- * @route   POST /api/shifts/end
- * @desc    End the current cashier shift
- * @access  Private
- */
 router.post('/end', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const { closingBalance, notes } = req.body;
@@ -59,50 +57,49 @@ router.post('/end', authenticate, async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: 'Closing balance is required' });
     }
 
-    const activeShift = await prisma.cashierShift.findFirst({
-      where: {
-        userId: req.user!.userId,
-        status: 'OPEN'
-      }
-    });
+    const { data: activeShift } = await supabase
+      .from('cashier_shifts')
+      .select('*')
+      .eq('user_id', req.user!.userId)
+      .eq('status', 'OPEN')
+      .single();
 
     if (!activeShift) {
       return res.status(404).json({ error: 'No active shift found' });
     }
 
-    // Calculate total sales during this shift
-    const sales = await prisma.sale.aggregate({
-      where: {
-        userId: req.user!.userId,
-        branchId: activeShift.branchId,
-        createdAt: {
-          gte: activeShift.startTime
-        },
-        status: 'COMPLETED'
-      },
-      _sum: {
-        finalAmount: true
-      }
-    });
+    const { data: sales } = await supabase
+      .from('sales')
+      .select('final_amount')
+      .eq('user_id', req.user!.userId)
+      .eq('branch_id', activeShift.branch_id)
+      .gte('created_at', activeShift.opened_at)
+      .eq('status', 'COMPLETED');
 
-    const totalSales = sales._sum.finalAmount || 0;
-    const expectedBalance = Number(activeShift.openingBalance || 0) + Number(totalSales);
+    const totalSales = (sales || []).reduce((sum: number, s: any) => sum + (parseFloat(s.final_amount) || 0), 0);
+    const expectedBalance = Number(activeShift.opening_balance || 0) + totalSales;
 
-    const shift = await prisma.cashierShift.update({
-      where: { id: activeShift.id },
-      data: {
-        endTime: new Date(),
-        closingBalance,
-        actualSales: totalSales,
+    const { data: shift, error } = await supabase
+      .from('cashier_shifts')
+      .update({
+        closed_at: new Date().toISOString(),
+        closing_balance: closingBalance,
         status: 'CLOSED',
-        notes
-      }
-    });
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', activeShift.id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error ending shift:', error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
 
     res.json({
       shift,
       summary: {
-        openingBalance: activeShift.openingBalance || 0,
+        openingBalance: activeShift.opening_balance || 0,
         totalSales,
         expectedBalance,
         closingBalance,

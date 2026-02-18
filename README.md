@@ -1,489 +1,1721 @@
-# PharmaCare Backend
-
-A multi-tenant Pharmacy SaaS Platform Backend built with TypeScript, Express.js, and PostgreSQL. This backend provides comprehensive pharmacy management capabilities including inventory tracking, sales processing, payment integration, and user management.
-
-## 📋 Table of Contents
-
-- [Overview](#overview)
-- [Features](#features)
-- [Tech Stack](#tech-stack)
-- [Project Structure](#project-structure)
-- [Getting Started](#getting-started)
-- [Environment Variables](#environment-variables)
-- [Database Schema](#database-schema)
-- [API Documentation](#api-documentation)
-- [Authentication](#authentication)
-- [Deployment](#deployment)
-- [Contributing](#contributing)
-- [License](#license)
-
-## 🎯 Overview
-
-PharmaCare Backend is a robust, scalable backend solution designed for pharmacy management systems. It supports multi-tenant architecture, allowing multiple pharmacies to use the same platform while maintaining complete data isolation. The system integrates with Chapa payment gateway for seamless payment processing and provides comprehensive inventory management, sales tracking, and user administration features.
-
-## ✨ Features
-
-### Core Functionality
-- **Multi-Tenant Architecture**: Support for multiple pharmacies with complete data isolation
-- **User Management**: Role-based access control (Admin, Manager, Pharmacist, Cashier)
-- **Authentication & Authorization**: JWT-based authentication with secure password handling
-- **Inventory Management**: Track medicines, batches, categories, and stock levels
-- **Sales Processing**: Complete sales workflow with pharmacist and cashier roles
-- **Payment Integration**: Chapa payment gateway integration with webhook support
-- **Refund Management**: Process refunds with proper stock restoration
-- **Cashier Shifts**: Track cashier shifts with opening/closing balances
-- **Stock Movements**: Track all stock movements (restock, transfer, adjustment, etc.)
-
-### Technical Features
-- **TypeScript**: Full type safety throughout the application
-- **Express.js**: Fast and minimal web framework
-- **Prisma ORM**: Type-safe database access with PostgreSQL
-- **Swagger/OpenAPI**: Interactive API documentation
-- **Rate Limiting**: Protect against brute force attacks
-- **Input Validation**: Comprehensive request validation
-- **Security**: Helmet.js for security headers, CORS configuration
-- **Logging**: Morgan for HTTP request logging
-- **Graceful Shutdown**: Proper handling of SIGTERM and SIGINT signals
-
-## 🛠 Tech Stack
-
-| Category | Technology | Version |
-|----------|-----------|---------|
-| **Runtime** | Node.js | - |
-| **Language** | TypeScript | - |
-| **Framework** | Express.js | ^5.2.1 |
-| **Database** | PostgreSQL | - |
-| **ORM** | Prisma | ^7.4.0 |
-| **Authentication** | JWT (jsonwebtoken) | ^9.0.3 |
-| **Password Hashing** | bcryptjs | ^3.0.3 |
-| **Payment Gateway** | Chapa | - |
-| **API Documentation** | Swagger UI | ^5.0.1 |
-| **Security** | Helmet | ^8.1.0 |
-| **CORS** | cors | ^2.8.6 |
-| **Logging** | Morgan | ^1.10.1 |
-| **HTTP Client** | Axios | ^1.13.5 |
-| **Environment** | dotenv | ^17.3.1 |
-
-## 📁 Project Structure
-
-```
-pharmacare-backend/
-├── prisma/
-│   └── schema.prisma          # Database schema definition
-├── src/
-│   ├── config/
-│   │   ├── index.ts           # Application configuration
-│   │   └── swagger.ts         # Swagger/OpenAPI configuration
-│   ├── lib/
-│   │   ├── auth.ts            # Authentication utilities
-│   │   ├── chapa.ts           # Chapa payment integration
-│   │   └── prisma.ts          # Prisma client instance
-│   ├── middleware/
-│   │   ├── auth.ts            # JWT authentication middleware
-│   │   ├── rateLimit.ts       # Rate limiting middleware
-│   │   └── validation.ts     # Input validation schemas
-│   ├── routes/
-│   │   ├── auth.ts            # Authentication routes
-│   │   ├── pharmacies.ts     # Pharmacy management routes
-│   │   ├── users.ts           # User management routes
-│   │   ├── inventory.ts       # Inventory management routes
-│   │   ├── sales.ts           # Sales processing routes
-│   │   ├── refunds.ts         # Refund processing routes
-│   │   ├── shifts.ts          # Cashier shift routes
-│   │   └── payments.ts        # Payment processing routes
-│   ├── app.ts                 # Express application setup
-│   └── server.ts              # Server entry point
-├── .env                       # Environment variables (not in git)
-├── .gitignore                 # Git ignore rules
-├── package.json               # Project dependencies
-├── tsconfig.json              # TypeScript configuration
-├── vercel.json                # Vercel deployment configuration
-└── README.md                  # This file
-```
-
-## 🚀 Getting Started
-
-### Prerequisites
-
-- Node.js (v18 or higher)
-- PostgreSQL database
-- npm or yarn package manager
-- Chapa account (for payment integration)
-
-### Installation
-
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd pharmacare-backend
-   ```
-
-2. **Install dependencies**
-   ```bash
-   npm install
-   ```
-
-3. **Set up environment variables**
-   ```bash
-   cp .env.example .env
-   # Edit .env with your configuration
-   ```
-
-4. **Set up the database**
-   ```bash
-   # Generate Prisma client
-   npm run prisma:generate
-   
-   # Run database migrations
-   npm run prisma:migrate
-   ```
-
-5. **Start the development server**
-   ```bash
-   npm run dev
-   ```
-
-The server will start on `http://localhost:3000`
-
-### Available Scripts
-
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Start development server with ts-node |
-| `npm run build` | Generate Prisma client |
-| `npm start` | Start production server |
-| `npm run prisma:generate` | Generate Prisma client |
-| `npm run prisma:migrate` | Run database migrations |
-| `npm run prisma:studio` | Open Prisma Studio for database management |
-
-## 🔐 Environment Variables
-
-Create a `.env` file in the root directory with the following variables:
-
-```env
-# Database
-DATABASE_URL=postgresql://user:password@localhost:5432/pharmacare
-
-# JWT Configuration
-JWT_SECRET=your_super_secret_jwt_key_change_this_in_production
-JWT_EXPIRES_IN=7d
-
-# Server Configuration
-PORT=3000
-NODE_ENV=development
-
-# Chapa Payment Gateway
-CHAPA_SECRET_KEY=your_chapa_secret_key
-CHAPA_WEBHOOK_SECRET=your_chapa_webhook_secret
-
-# CORS
-CORS_ORIGIN=*
-
-# Logging
-LOG_LEVEL=info
-```
-
-### Environment Variable Descriptions
-
-| Variable | Required | Description | Default |
-|----------|----------|-------------|---------|
-| `DATABASE_URL` | Yes | PostgreSQL connection string | - |
-| `JWT_SECRET` | Yes | Secret key for JWT token signing | - |
-| `JWT_EXPIRES_IN` | No | JWT token expiration time | `7d` |
-| `PORT` | No | Server port number | `3000` |
-| `NODE_ENV` | No | Environment (development/production) | `development` |
-| `CHAPA_SECRET_KEY` | Yes | Chapa API secret key | - |
-| `CHAPA_WEBHOOK_SECRET` | Yes | Chapa webhook secret | - |
-| `CORS_ORIGIN` | No | Allowed CORS origins | `*` |
-| `LOG_LEVEL` | No | Logging level | `info` |
-
-## 🗄 Database Schema
-
-The database uses Prisma ORM with PostgreSQL. The schema includes the following main entities:
-
-### Core Models
-
-1. **Pharmacy** - Multi-tenant pharmacy organization
-2. **Branch** - Pharmacy branches/locations
-3. **User** - System users with roles
-4. **Role** - User roles (Admin, Manager, Pharmacist, Cashier)
-5. **UserRole** - Many-to-many relationship between users and roles
-6. **UserBranch** - Many-to-many relationship between users and branches
-
-### Inventory Models
-
-7. **MedicineCategory** - Medicine categories
-8. **Medicine** - Medicine catalog
-9. **MedicineBatch** - Medicine batches with expiry tracking
-10. **Stock** - Current stock levels per medicine per branch
-11. **StockMovement** - Stock movement history
-
-### Sales & Payment Models
-
-12. **PaymentMethod** - Available payment methods
-13. **CashierShift** - Cashier shift tracking
-14. **Sale** - Sales transactions
-15. **SaleItem** - Individual items in a sale
-16. **Payment** - Payment records
-17. **PaymentTransaction** - Payment provider transactions
-
-### Refund Models
-
-18. **Refund** - Refund records
-19. **RefundItem** - Individual items in a refund
-
-For detailed schema information, see [`prisma/schema.prisma`](prisma/schema.prisma)
-
-## 📚 API Documentation
-
-### Base URLs
-- **Development**: `http://localhost:3000/api`
-- **Production**: `https://backend-21.vercel.app/api`
-
-### Interactive Documentation
-Access the interactive Swagger UI documentation at:
-- **Development**: `http://localhost:3000/api-docs`
-- **Production**: `https://backend-21.vercel.app/api-docs`
-
-### API Endpoints Summary
-
-#### Authentication
-| Method | Endpoint | Description | Auth Required |
-|--------|----------|-------------|---------------|
-| POST | `/auth/register` | Register a new user | No |
-| POST | `/auth/login` | User login | No |
-| POST | `/auth/change-password` | Change password | Yes |
-| GET | `/auth/me` | Get current user | Yes |
-
-#### Pharmacies
-| Method | Endpoint | Description | Auth Required |
-|--------|----------|-------------|---------------|
-| GET | `/pharmacies` | Get all pharmacies | No |
-| GET | `/pharmacies/:id` | Get pharmacy by ID | No |
-| POST | `/pharmacies` | Create new pharmacy | Yes |
-| PUT | `/pharmacies/:id` | Update pharmacy | Yes |
-| DELETE | `/pharmacies/:id` | Delete pharmacy | Yes |
-| GET | `/pharmacies/:id/branches` | Get pharmacy branches | No |
-
-#### Users
-| Method | Endpoint | Description | Auth Required |
-|--------|----------|-------------|---------------|
-| GET | `/users` | Get all users | Yes |
-| GET | `/users/:id` | Get user by ID | Yes |
-| PUT | `/users/:id` | Update user | Yes |
-| DELETE | `/users/:id` | Delete user | Yes |
-| GET | `/users/:id/branches` | Get user branches | Yes |
-| POST | `/users/:id/branches` | Assign branch to user | Yes |
-| DELETE | `/users/:id/branches/:branchId` | Remove branch from user | Yes |
-
-#### Inventory
-| Method | Endpoint | Description | Auth Required |
-|--------|----------|-------------|---------------|
-| GET | `/inventory/categories` | Get all categories | Yes |
-| POST | `/inventory/categories` | Create category | Yes |
-| GET | `/inventory/medicines` | Get all medicines | Yes |
-| POST | `/inventory/medicines` | Add medicine | Yes |
-| PUT | `/inventory/medicines/:id` | Update medicine | Yes |
-| DELETE | `/inventory/medicines/:id` | Delete medicine | Yes |
-| GET | `/inventory/stocks` | Get stock levels | Yes |
-| POST | `/inventory/batches` | Receive new stock | Yes |
-| GET | `/inventory/movements` | Get stock movements | Yes |
-| POST | `/inventory/transfer` | Transfer stock between branches | Yes |
-
-#### Sales
-| Method | Endpoint | Description | Auth Required |
-|--------|----------|-------------|---------------|
-| GET | `/sales` | Get all sales | Yes |
-| GET | `/sales/:id` | Get sale by ID | Yes |
-| POST | `/sales` | Create new sale | Yes |
-| PUT | `/sales/:id` | Update sale | Yes |
-| DELETE | `/sales/:id` | Delete sale | Yes |
-| GET | `/sales/daily` | Get daily sales report | Yes |
-
-#### Payments
-| Method | Endpoint | Description | Auth Required |
-|--------|----------|-------------|---------------|
-| POST | `/payments/chapa/initialize` | Initialize Chapa payment | Yes |
-| GET | `/payments/chapa/verify/:txRef` | Verify Chapa payment | Yes |
-| POST | `/payments/chapa/webhook` | Chapa webhook handler | No* |
-| GET | `/payments/chapa/callback` | Chapa callback handler | No |
-| GET | `/payments/chapa/return` | Chapa return handler | No |
-
-*Webhook is secured with signature verification
-
-#### Refunds
-| Method | Endpoint | Description | Auth Required |
-|--------|----------|-------------|---------------|
-| GET | `/refunds` | Get all refunds | Yes |
-| GET | `/refunds/:id` | Get refund by ID | Yes |
-| POST | `/refunds` | Create refund | Yes |
-| PUT | `/refunds/:id` | Update refund | Yes |
-| DELETE | `/refunds/:id` | Delete refund | Yes |
-
-#### Shifts
-| Method | Endpoint | Description | Auth Required |
-|--------|----------|-------------|---------------|
-| GET | `/shifts` | Get all shifts | Yes |
-| GET | `/shifts/:id` | Get shift by ID | Yes |
-| POST | `/shifts` | Create shift | Yes |
-| PUT | `/shifts/:id` | Update shift | Yes |
-| DELETE | `/shifts/:id` | Delete shift | Yes |
-| POST | `/shifts/:id/close` | Close shift | Yes |
-
-For detailed API documentation with request/response examples, see [`API_ENDPOINTS_DOCUMENTATION.md`](API_ENDPOINTS_DOCUMENTATION.md)
-
-## 🔒 Authentication
-
-The API uses JWT (JSON Web Tokens) for authentication. Here's how to use it:
-
-### Login Flow
-
-1. **Register a user** (if not already registered)
-   ```bash
-   POST /api/auth/register
-   {
-     "email": "user@example.com",
-     "password": "securePassword123",
-     "fullName": "John Doe",
-     "pharmacyId": 1,
-     "roles": ["pharmacist"]
-   }
-   ```
-
-2. **Login to get a token**
-   ```bash
-   POST /api/auth/login
-   {
-     "email": "user@example.com",
-     "password": "securePassword123"
-   }
-   ```
-
-   Response:
-   ```json
-   {
-     "message": "Login successful",
-     "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-     "user": {
-       "id": 1,
-       "email": "user@example.com",
-       "fullName": "John Doe",
-       "pharmacyId": 1,
-       "roles": ["pharmacist"]
-     }
-   }
-   ```
-
-3. **Use the token for authenticated requests**
-   ```bash
-   GET /api/users
-   Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-   ```
-
-### Token Expiration
-
-- Default token expiration: 7 days
-- Tokens should be stored securely (e.g., httpOnly cookies or secure storage)
-- Implement token refresh logic in your frontend application
-
-### Role-Based Access Control
-
-The system supports the following roles:
-
-| Role | Permissions |
-|------|-------------|
-| **Admin** | Full access to all resources and settings |
-| **Manager** | Manage inventory, users, and view reports |
-| **Pharmacist** | Process sales, manage inventory, view reports |
-| **Cashier** | Process sales, manage shifts |
-
-## 🚢 Deployment
-
-### Vercel Deployment
-
-The project is configured for Vercel deployment. To deploy:
-
-1. **Install Vercel CLI**
-   ```bash
-   npm install -g vercel
-   ```
-
-2. **Login to Vercel**
-   ```bash
-   vercel login
-   ```
-
-3. **Deploy**
-   ```bash
-   vercel
-   ```
-
-4. **Set environment variables in Vercel dashboard**
-   - `DATABASE_URL`
-   - `JWT_SECRET`
-   - `CHAPA_SECRET_KEY`
-   - `CHAPA_WEBHOOK_SECRET`
-   - And other required variables
-
-### Production Checklist
-
-- [ ] Set strong `JWT_SECRET`
-- [ ] Set `NODE_ENV=production`
-- [ ] Configure proper `CORS_ORIGIN`
-- [ ] Set up production database
-- [ ] Run database migrations
-- [ ] Configure Chapa webhook URL
-- [ ] Set up monitoring and logging
-- [ ] Configure backup strategy
-- [ ] Review security headers
-- [ ] Test all API endpoints
-
-## 🤝 Contributing
-
-Contributions are welcome! Please follow these guidelines:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-### Code Style
-
-- Follow TypeScript best practices
-- Use meaningful variable and function names
-- Add comments for complex logic
-- Write clean, maintainable code
-- Follow the existing project structure
-
-### Testing
-
-Before submitting a PR, ensure:
-- All tests pass
-- Code follows the project style
-- New features include tests
-- Documentation is updated
-
-## 📄 License
-
-This project is licensed under the ISC License.
-
-## 📞 Support
-
-For support, please contact:
-- Email: support@pharmacare.com
-- Issues: [GitHub Issues](https://github.com/your-repo/pharmacare-backend/issues)
-
-## 🙏 Acknowledgments
-
-- Built with [Express.js](https://expressjs.com/)
-- Database powered by [Prisma](https://www.prisma.io/)
-- Payment integration by [Chapa](https://chapa.co/)
-- API documentation with [Swagger](https://swagger.io/)
+# PharmaCare Backend API Documentation
+
+## Table of Contents
+
+1. [Overview](#overview)
+2. [API Base URLs](#api-base-urls)
+3. [Authentication](#authentication)
+4. [API Endpoints](#api-endpoints)
+   - [Authentication Endpoints](#authentication-endpoints)
+   - [Inventory Management](#inventory-management)
+   - [Sales](#sales)
+   - [Payments](#payments)
+   - [Pharmacies & Branches](#pharmacies--branches)
+   - [Users & Staff](#users--staff)
+   - [Shifts](#shifts)
+   - [Refunds & Stock Movements](#refunds--stock-movements)
+   - [Import & Upload](#import--upload)
+   - [Admin Endpoints](#admin-endpoints)
+   - [Admin Subscriptions](#admin-subscriptions)
+   - [Admin Documents](#admin-documents)
+   - [Registration](#registration-public)
+   - [Role-Based Endpoints](#role-based-endpoints)
+5. [Frontend Integration Guide](#frontend-integration-guide)
+6. [UI Update Procedures](#ui-update-procedures)
+7. [System Flow](#system-flow)
+8. [Error Handling](#error-handling)
+9. [Rate Limiting & Pagination](#rate-limiting--pagination)
+10. [Sample Code Snippets](#sample-code-snippets)
 
 ---
 
-**Note**: This is the backend API. For the frontend application, please refer to the separate frontend repository.
+## Overview
 
-**Last Updated**: 2026-02-17
-**Version**: 1.0.0
+The PharmaCare Backend API is a multi-tenant RESTful API designed for pharmacy management systems. It provides endpoints for managing inventory, sales, payments, users, branches, and subscriptions.
+
+### Technology Stack
+
+- **Runtime:** Node.js with Express.js
+- **Database:** PostgreSQL (via Supabase)
+- **Authentication:** JWT (JSON Web Tokens)
+- **Payment Gateway:** Chapa (Ethiopian payment processor)
+- **File Storage:** Supabase Storage
+
+---
+
+## API Base URLs
+
+| Environment | URL |
+|-------------|-----|
+| Development | `http://localhost:3000/api` |
+| Production | `https://backend-21.vercel.app/api` |
+
+---
+
+## Authentication
+
+### Authentication Flow
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Frontend
+    participant Backend
+
+    User->>Frontend: Enter credentials
+    Frontend->>Backend: POST /auth/login
+    Backend-->>Frontend: JWT token + user data
+    Frontend->>Frontend: Store token
+    Frontend->>Backend: API request (with Bearer token)
+    Backend->>Backend: Validate JWT token
+    Backend-->>Frontend: Response data
+```
+
+### Token Management
+
+The API uses JWT (JSON Web Tokens) for authentication. Tokens are included in the `Authorization` header:
+
+```http
+Authorization: Bearer <your-jwt-token>
+```
+
+**Token Expiration:** 7 days (configurable via `JWT_EXPIRES_IN` environment variable)
+
+### Password Requirements
+
+- Minimum 8 characters
+- Passwords are hashed using bcrypt with salt factor 10
+
+---
+
+## API Endpoints
+
+### Authentication Endpoints
+
+| Method | Endpoint | Access | Description |
+|--------|----------|--------|-------------|
+| POST | [`/auth/register`](#post-authregister) | Public | Register a new user |
+| POST | [`/auth/login`](#post-authlogin) | Public | Login and get token |
+| POST | [`/auth/change-password`](#post-authchange-password) | Private | Change user password |
+| POST | [`/auth/forgot-password`](#post-authforgot-password) | Public | Request password reset |
+| POST | [`/auth/reset-password`](#post-authreset-password) | Public | Reset password with token |
+| POST | [`/auth/logout`](#post-authlogout) | Private | Logout user |
+| GET | [`/auth/me`](#get-authme) | Private | Get current user info |
+
+#### POST /auth/register
+
+Register a new user within a pharmacy.
+
+**Request Body:**
+```json
+{
+  "email": "user@pharmacy.com",
+  "password": "password123",
+  "fullName": "John Doe",
+  "pharmacyId": 1,
+  "roles": ["pharmacist"]
+}
+```
+
+**Response (201 Created):**
+```json
+{
+  "message": "User registered successfully",
+  "token": "eyJhbGciOiJIUzI1NiIs...",
+  "user": {
+    "id": 1,
+    "email": "user@pharmacy.com",
+    "fullName": "John Doe",
+    "pharmacyId": 1,
+    "roles": ["pharmacist"]
+  }
+}
+```
+
+#### POST /auth/login
+
+Authenticate a user and receive a JWT token.
+
+**Request Body:**
+```json
+{
+  "email": "user@pharmacy.com",
+  "password": "password123"
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "message": "Login successful",
+  "token": "eyJhbGciOiJIUzI1NiIs...",
+  "user": {
+    "id": 1,
+    "email": "user@pharmacy.com",
+    "fullName": "John Doe",
+    "pharmacyId": 1,
+    "roles": ["pharmacist"],
+    "isOwner": false,
+    "mustChangePassword": false
+  }
+}
+```
+
+#### POST /auth/change-password
+
+Change the current user's password.
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Request Body:**
+```json
+{
+  "currentPassword": "oldPassword123",
+  "newPassword": "newPassword456"
+}
+```
+
+#### GET /auth/me
+
+Get the current authenticated user's profile.
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Response (200 OK):**
+```json
+{
+  "id": 1,
+  "email": "user@pharmacy.com",
+  "fullName": "John Doe",
+  "pharmacyId": 1,
+  "roles": ["pharmacist"],
+  "isOwner": false,
+  "branches": [
+    { "id": 1, "name": "Main Branch", "location": "Addis Ababa" }
+  ],
+  "isActive": true,
+  "mustChangePassword": false
+}
+```
+
+---
+
+### Inventory Management
+
+| Method | Endpoint | Access | Roles | Description |
+|--------|----------|--------|-------|-------------|
+| GET | [`/inventory/categories`](#get-inventorycategories) | Private | All | Get medicine categories |
+| GET | [`/inventory/medicines`](#get-inventorymedicines) | Private | All | Get all medicines |
+| POST | [`/inventory/medicines`](#post-inventorymedicines) | Private | Admin/Manager/Pharmacist | Add medicine |
+| GET | [`/inventory/stocks`](#get-inventorystocks) | Private | All | Get stock levels |
+| POST | [`/inventory/batches`](#post-inventorybatches) | Private | Admin/Manager/Pharmacist | Receive stock batch |
+
+#### GET /inventory/categories
+
+Get all medicine categories.
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Response (200 OK):**
+```json
+[
+  { "id": 1, "name": "Antibiotics" },
+  { "id": 2, "name": "Pain Relief" }
+]
+```
+
+---
+
+### Sales
+
+| Method | Endpoint | Access | Roles | Description |
+|--------|----------|--------|-------|-------------|
+| GET | [`/sales/payment-methods`](#get-salespayment-methods) | Private | All | Get payment methods |
+| POST | [`/sales`](#post-sales) | Private | Admin/Manager/Pharmacist/Cashier | Create new sale |
+| GET | [`/sales`](#get-sales) | Private | All | Get sales history |
+
+#### GET /sales/payment-methods
+
+Get available payment methods.
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Response (200 OK):**
+```json
+[
+  { "id": 1, "name": "Cash" },
+  { "id": 2, "name": "Card" },
+  { "id": 3, "name": "Chapa" }
+]
+```
+
+#### POST /sales
+
+Create a new sale.
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Request Body:**
+```json
+{
+  "branchId": 1,
+  "customerName": "John Customer",
+  "customerPhone": "+251911000000",
+  "items": [
+    { "medicineId": 1, "batchId": 1, "quantity": 2, "unitPrice": 150.00 }
+  ],
+  "paymentMethodId": 1,
+  "discountAmount": 10.00,
+  "taxAmount": 5.00,
+  "isChapaPayment": false
+}
+```
+
+**Response (201 Created):**
+```json
+{
+  "id": 123,
+  "branchId": 1,
+  "customerName": "John Customer",
+  "totalAmount": 300.00,
+  "discountAmount": 10.00,
+  "taxAmount": 5.00,
+  "finalAmount": 295.00,
+  "status": "COMPLETED"
+}
+```
+
+#### GET /sales
+
+Get sales history with optional filters.
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Query Parameters:**
+- `branchId` - Filter by branch
+- `startDate` - Filter by start date (ISO format)
+- `endDate` - Filter by end date (ISO format)
+
+---
+
+### Payments
+
+| Method | Endpoint | Access | Description |
+|--------|----------|--------|-------------|
+| POST | [`/payments/chapa/initialize`](#post-paymentschapainitialize) | Private | Initialize Chapa payment |
+| GET | [`/payments/chapa/verify/:txRef`](#get-paymentschapaverifytxref) | Private | Verify payment |
+| POST | [`/payments/chapa/webhook`](#post-paymentschapawebhook) | Public | Handle Chapa webhook |
+| GET | [`/payments/chapa/callback`](#get-paymentschapacallback) | Public | Handle payment callback |
+| GET | [`/payments/chapa/return`](#get-paymentschapareturn) | Public | Handle payment return |
+| GET | [`/payments/transactions`](#get-paymentstransactions) | Private | Get payment transactions |
+
+#### POST /payments/chapa/initialize
+
+Initialize a Chapa payment for a sale.
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Request Body:**
+```json
+{
+  "saleId": 123,
+  "customerEmail": "customer@email.com",
+  "customerFirstName": "John",
+  "customerLastName": "Doe"
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "checkout_url": "https://checkout.chapa.co/...",
+  "tx_ref": "TXF-123456"
+}
+```
+
+#### GET /payments/chapa/verify/:txRef
+
+Verify a payment transaction.
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "status": "success",
+  "message": "Payment verified"
+}
+```
+
+---
+
+### Pharmacies & Branches
+
+| Method | Endpoint | Access | Roles | Description |
+|--------|----------|--------|-------|-------------|
+| GET | [`/pharmacies`](#get-pharmacies) | Private | Admin | Get all pharmacies |
+| GET | [`/pharmacies/my`](#get-pharmaciesmy) | Private | All | Get my pharmacy |
+| PUT | [`/pharmacies/my`](#put-pharmaciesmy) | Private | Admin | Update pharmacy |
+| GET | [`/pharmacies/branches`](#get-pharmaciesbranches) | Private | All | Get branches |
+| POST | [`/pharmacies/branches`](#post-pharmaciesbranches) | Private | Admin | Create branch |
+| PUT | [`/pharmacies/branches/:id`](#put-pharmaciesbranchesid) | Private | Admin | Update branch |
+
+#### GET /pharmacies/my
+
+Get the current user's pharmacy details.
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Response (200 OK):**
+```json
+{
+  "id": 1,
+  "name": "My Pharmacy",
+  "licenseNumber": "LIC-001",
+  "address": "Addis Ababa, Ethiopia",
+  "phone": "+251911000000",
+  "email": "pharmacy@email.com",
+  "branches": [
+    { "id": 1, "name": "Main Branch", "location": "Addis Ababa" }
+  ]
+}
+```
+
+#### POST /pharmacies/branches
+
+Create a new branch.
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Request Body:**
+```json
+{
+  "name": "Branch 2",
+  "location": "Bahir Dar, Ethiopia",
+  "phone": "+251911000001",
+  "email": "branch2@pharmacy.com",
+  "isMainBranch": false
+}
+```
+
+---
+
+### Users & Staff
+
+| Method | Endpoint | Access | Roles | Description |
+|--------|----------|--------|-------|-------------|
+| GET | [`/users`](#get-users) | Private | Admin/Manager | Get all users |
+| POST | [`/users`](#post-users) | Private | Admin | Create user |
+| PUT | [`/users/:id`](#put-usersid) | Private | Admin | Update user |
+
+#### GET /users
+
+Get all users in the pharmacy.
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Response (200 OK):**
+```json
+[
+  {
+    "id": 1,
+    "email": "admin@pharmacy.com",
+    "fullName": "Admin User",
+    "isActive": true,
+    "roles": ["admin"],
+    "branches": [{ "id": 1, "name": "Main Branch" }]
+  }
+]
+```
+
+#### POST /users
+
+Create a new user.
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Request Body:**
+```json
+{
+  "email": "newuser@pharmacy.com",
+  "password": "password123",
+  "fullName": "New User",
+  "roles": ["pharmacist"],
+  "branchIds": [1, 2]
+}
+```
+
+---
+
+### Shifts
+
+| Method | Endpoint | Access | Description |
+|--------|----------|--------|-------------|
+| POST | [`/shifts/start`](#post-shiftsstart) | Private | Start cashier shift |
+| POST | [`/shifts/end`](#post-shiftsend) | Private | End cashier shift |
+
+#### POST /shifts/start
+
+Start a new cashier shift.
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Request Body:**
+```json
+{
+  "branchId": 1,
+  "openingBalance": 1000.00
+}
+```
+
+**Response (201 Created):**
+```json
+{
+  "id": 1,
+  "userId": 1,
+  "branchId": 1,
+  "openingBalance": 1000.00,
+  "status": "OPEN",
+  "openedAt": "2024-01-15T08:00:00Z"
+}
+```
+
+#### POST /shifts/end
+
+End the current cashier shift.
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Request Body:**
+```json
+{
+  "closingBalance": 5000.00,
+  "notes": "Shift completed"
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "shift": { "id": 1, "status": "CLOSED" },
+  "summary": {
+    "openingBalance": 1000.00,
+    "totalSales": 3500.00,
+    "expectedBalance": 4500.00,
+    "closingBalance": 5000.00,
+    "difference": 500.00
+  }
+}
+```
+
+---
+
+### Refunds & Stock Movements
+
+| Method | Endpoint | Access | Roles | Description |
+|--------|----------|--------|-------|-------------|
+| POST | [`/refunds`](#post-refunds) | Private | Admin/Manager/Pharmacist | Create refund |
+| POST | [`/refunds/movements`](#post-refundsmovements) | Private | Admin/Manager/Pharmacist | Record stock movement |
+
+#### POST /refunds
+
+Process a refund for a sale.
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Request Body:**
+```json
+{
+  "saleId": 123,
+  "reason": "Customer returned item",
+  "items": [
+    { "medicineId": 1, "quantity": 1, "unitPrice": 150.00 }
+  ]
+}
+```
+
+#### POST /refunds/movements
+
+Record stock movements (transfer, adjustment, etc.).
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Request Body:**
+```json
+{
+  "medicineId": 1,
+  "branchId": 1,
+  "quantity": 50,
+  "type": "TRANSFER",
+  "targetBranchId": 2,
+  "reason": "Stock rebalancing"
+}
+```
+
+**Movement Types:**
+- `IN` - Stock received
+- `OUT` - Stock removed
+- `ADJUSTMENT` - Manual stock adjustment
+- `TRANSFER` - Transfer between branches
+
+**Response (200 OK):**
+```json
+{
+  "message": "Stock movement recorded",
+  "type": "TRANSFER",
+  "quantity": 50,
+  "newQuantity": 950
+}
+```
+
+---
+
+### Import & Upload
+
+| Method | Endpoint | Access | Roles | Description |
+|--------|----------|--------|-------|-------------|
+| POST | [`/import/medicines`](#post-importmedicines) | Private | Admin/Manager/Pharmacist | Import medicines from Excel/CSV |
+| POST | [`/import/stock`](#post-importstock) | Private | Admin/Manager/Pharmacist | Import stock from Excel/CSV |
+| GET | [`/import/template/medicines`](#get-importtemplatemedicines) | Private | Admin/Manager/Pharmacist | Download medicine template |
+| GET | [`/import/template/stock`](#get-importtemplatestock) | Private | Admin/Manager/Pharmacist | Download stock template |
+| POST | [`/upload/document`](#post-uploaddocument) | Private | All | Upload document |
+| GET | [`/upload/documents`](#get-uploaddocuments) | Private | All | Get uploaded documents |
+
+#### POST /import/medicines
+
+Import medicines from Excel or CSV file.
+
+**Headers:** `Authorization: Bearer <token>`
+**Content-Type:** `multipart/form-data`
+
+**Form Data:**
+- `file` - Excel (.xlsx) or CSV file
+- `branchId` (optional) - Target branch ID
+- `createCategories` (optional) - Create new categories (default: true)
+- `skipDuplicates` (optional) - Skip duplicate medicines (default: true)
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "summary": {
+    "total": 100,
+    "imported": 95,
+    "skipped": 3,
+    "failed": 2
+  },
+  "imported": [...],
+  "failed": [...]
+}
+```
+
+---
+
+### Admin Endpoints
+
+| Method | Endpoint | Access | Roles | Description |
+|--------|----------|--------|-------|-------------|
+| GET | [`/admin/dashboard`](#get-admindashboard) | Private | Admin | Get admin dashboard |
+| GET | [`/admin/managers`](#get-adminmanagers) | Private | Admin | Get all managers |
+| PUT | [`/admin/managers/:id/activate`](#put-adminmanagersidactivate) | Private | Admin | Activate manager |
+| PUT | [`/admin/managers/:id/deactivate`](#put-adminmanagersiddeactivate) | Private | Admin | Deactivate manager |
+| GET | [`/admin/branches`](#get-adminbranches) | Private | Admin | Get all branches |
+| POST | [`/admin/branches`](#post-adminbranches) | Private | Admin | Create branch |
+| PUT | [`/admin/branches/:id`](#put-adminbranchesid) | Private | Admin | Update branch |
+| DELETE | [`/admin/branches/:id`](#delete-adminbranchesid) | Private | Admin | Delete branch |
+
+#### GET /admin/dashboard
+
+Get system-wide admin dashboard.
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Response (200 OK):**
+```json
+{
+  "totalPharmacies": 50,
+  "activePharmacies": 45,
+  "totalBranches": 120,
+  "totalUsers": 500,
+  "totalRevenue": 1500000.00,
+  "recentActivity": [...]
+}
+```
+
+---
+
+### Role-Based Endpoints
+
+#### Manager Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | [`/manager/dashboard`](#get-managerdashboard) | Get manager dashboard |
+| GET | [`/manager/staff`](#get-managerstaff) | Get staff list |
+| POST | [`/manager/staff`](#post-managerstaff) | Create staff member |
+| PUT | [`/manager/staff/:id`](#put-managerstaffid) | Update staff member |
+| PUT | [`/manager/staff/:id/activate`](#put-managerstaffidactivate) | Activate staff |
+| PUT | [`/manager/staff/:id/deactivate`](#put-managerstaffiddeactivate) | Deactivate staff |
+| GET | [`/manager/medicines`](#get-managermedicines) | Get medicines |
+| POST | [`/manager/medicines`](#post-managermedicines) | Add medicine |
+
+#### Pharmacist Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | [`/pharmacist/dashboard`](#get-pharmacistdashboard) | Get pharmacist dashboard |
+| GET | [`/pharmacist/sales`](#get-pharmacistsales) | Get sales |
+| POST | [`/pharmacist/sales`](#post-pharmacistsales) | Create sale |
+| POST | [`/pharmacist/handoff-to-cashier`](#post-pharmacisthandoff-to-cashier) | Hand off to cashier |
+| GET | [`/pharmacist/inventory`](#get-pharmacistinventory) | Get inventory |
+| POST | [`/pharmacist/inventory/restock-request`](#post-pharmacistinventoryrestock-request) | Request restock |
+| GET | [`/pharmacist/reports`](#get-pharmacistreports) | Get reports |
+
+#### Cashier Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | [`/cashier/dashboard`](#get-cashierdashboard) | Get cashier dashboard |
+| GET | [`/cashier/payments`](#get-cashierpayments) | Get pending payments |
+| POST | [`/cashier/payments/:id/accept`](#post-cashierpaymentsidaccept) | Accept payment |
+| GET | [`/cashier/receipts`](#get-cashierreceipts) | Get receipts |
+| GET | [`/cashier/receipts/:id`](#get-cashierreceiptsid) | Get receipt details |
+| GET | [`/cashier/returns`](#get-cashierreturns) | Get returns |
+| POST | [`/cashier/returns`](#post-cashierreturns) | Process return |
+| GET | [`/cashier/reports`](#get-cashierreports) | Get reports |
+
+---
+
+### Registration (Public)
+
+| Method | Endpoint | Access | Description |
+|--------|----------|--------|-------------|
+| POST | [`/auth/register/start`](#post-authregisterstart) | Public | Start registration |
+| POST | [`/auth/register/step1`](#post-authregisterstep1) | Public | Submit step 1 (personal info) |
+| POST | [`/auth/register/step2`](#post-authregisterstep2) | Public | Submit step 2 (pharmacy info) |
+| POST | [`/auth/register/upload`](#post-authregisterupload) | Public | Upload documents |
+| POST | [`/auth/register/step3`](#post-authregisterstep3) | Public | Select plan |
+| POST | [`/auth/register/submit`](#post-authregistersubmit) | Public | Submit application |
+| GET | [`/auth/register/status/:applicationId`](#get-authregisterstatusapplicationid) | Public | Check status by ID |
+| GET | [`/auth/register/status/email/:email`](#get-authregisterstatusemail-email) | Public | Check status by email |
+
+#### POST /auth/register/start
+
+Start a new registration application.
+
+**Request Body:**
+```json
+{
+  "email": "newpharmacy@email.com"
+}
+```
+
+**Response (201 Created):**
+```json
+{
+  "message": "Registration started",
+  "applicationId": 1,
+  "currentStep": 1
+}
+```
+
+#### POST /auth/register/step1
+
+Submit personal information.
+
+**Request Body:**
+```json
+{
+  "applicationId": 1,
+  "fullName": "John Doe",
+  "phone": "+251911000000",
+  "password": "password123"
+}
+```
+
+#### POST /auth/register/step2
+
+Submit pharmacy information.
+
+**Request Body:**
+```json
+{
+  "applicationId": 1,
+  "pharmacyName": "My Pharmacy",
+  "pharmacyAddress": "Addis Ababa, Ethiopia",
+  "pharmacyPhone": "+251911000001",
+  "pharmacyEmail": "pharmacy@email.com",
+  "licenseNumber": "LIC-001",
+  "tinNumber": "TIN-001"
+}
+```
+
+#### POST /auth/register/upload
+
+Upload registration documents.
+
+**Content-Type:** `multipart/form-data`
+
+**Form Data:**
+- `applicationId` - Application ID
+- `documentType` - "license" or "fyda"
+- `document` - File
+
+#### POST /auth/register/step3
+
+Select subscription plan.
+
+**Request Body:**
+```json
+{
+  "applicationId": 1,
+  "planId": 1
+}
+```
+
+#### POST /auth/register/submit
+
+Submit the application for review.
+
+**Request Body:**
+```json
+{
+  "applicationId": 1
+}
+```
+
+#### GET /auth/register/status/:applicationId
+
+Check application status by ID.
+
+**Response (200 OK):**
+```json
+{
+  "id": 1,
+  "email": "newpharmacy@email.com",
+  "fullName": "John Doe",
+  "pharmacyName": "My Pharmacy",
+  "currentStep": 4,
+  "status": "submitted",
+  "selectedPlan": { "id": 1, "name": "Basic" },
+  "createdAt": "2024-01-15T08:00:00Z"
+}
+```
+
+#### GET /auth/register/status/email/:email
+
+Check application status by email.
+
+**Response (200 OK):**
+```json
+{
+  "id": 1,
+  "email": "newpharmacy@email.com",
+  "fullName": "John Doe",
+  "currentStep": 4,
+  "status": "submitted",
+  "rejectionReason": null,
+  "createdAt": "2024-01-15T08:00:00Z"
+}
+```
+
+---
+
+### Admin Subscriptions
+
+| Method | Endpoint | Access | Description |
+|--------|----------|--------|-------------|
+| GET | [`/admin/subscriptions/plans`](#get-adminsubscriptionsplans) | Public | Get active subscription plans |
+| GET | [`/admin/subscriptions/plans/all`](#get-adminsubscriptionsplansall) | Admin | Get all plans |
+| POST | [`/admin/subscriptions/plans`](#post-adminsubscriptionsplans) | Admin | Create plan |
+| PUT | [`/admin/subscriptions/plans/:id`](#put-adminsubscriptionsplansid) | Admin | Update plan |
+| DELETE | [`/admin/subscriptions/plans/:id`](#delete-adminsubscriptionsplansid) | Admin | Deactivate plan |
+| GET | [`/admin/subscriptions/applications`](#get-adminsubscriptionsapplications) | Admin | Get registration applications |
+| GET | [`/admin/subscriptions/applications/:id`](#get-adminsubscriptionsapplicationsid) | Admin | Get application details |
+| POST | [`/admin/subscriptions/applications/:id/approve`](#post-adminsubscriptionsapplicationsidapprove) | Admin | Approve application |
+| POST | [`/admin/subscriptions/applications/:id/reject`](#post-adminsubscriptionsapplicationsidreject) | Admin | Reject application |
+
+#### GET /admin/subscriptions/plans
+
+Get all active subscription plans (public endpoint for registration).
+
+**Response (200 OK):**
+```json
+[
+  {
+    "id": 1,
+    "name": "Basic",
+    "description": "For small pharmacies",
+    "price": 500,
+    "currency": "ETB",
+    "billingCycle": "monthly",
+    "maxBranches": 1,
+    "maxStaffPerBranch": 5,
+    "maxMedicines": 100,
+    "features": { "support": "email" }
+  }
+]
+```
+
+#### GET /admin/subscriptions/applications
+
+Get all registration applications.
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Query Parameters:**
+- `status` - Filter by status (draft, submitted, approved, rejected)
+
+#### POST /admin/subscriptions/applications/:id/approve
+
+Approve a registration application. This creates the pharmacy, user, and branch.
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Response (200 OK):**
+```json
+{
+  "message": "Application approved successfully",
+  "pharmacy": { "id": 1, "name": "My Pharmacy" },
+  "user": { "id": 1, "email": "user@email.com", "fullName": "John Doe" },
+  "trialEndsAt": "2024-02-15T00:00:00Z",
+  "loginToken": "eyJhbGciOiJIUzI1NiIs..."
+}
+```
+
+#### POST /admin/subscriptions/applications/:id/reject
+
+Reject a registration application.
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Request Body:**
+```json
+{
+  "reason": "Invalid license document"
+}
+```
+
+---
+
+### Admin Documents
+
+| Method | Endpoint | Access | Description |
+|--------|----------|--------|-------------|
+| GET | [`/admin/documents/pending`](#get-admindocumentspending) | Admin | Get pending documents |
+| GET | [`/admin/documents/all`](#get-admindocumentsall) | Admin | Get all documents |
+| PUT | [`/admin/documents/:id/verify`](#put-admindocumentsidverify) | Admin | Verify document |
+| PUT | [`/admin/documents/:id/reject`](#put-admindocumentsidreject) | Admin | Reject document |
+
+#### GET /admin/documents/pending
+
+Get all documents pending verification.
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Response (200 OK):**
+```json
+[
+  {
+    "id": 1,
+    "documentType": "license",
+    "fileName": "license.pdf",
+    "fileUrl": "https://...",
+    "verificationStatus": "pending",
+    "pharmacy": { "id": 1, "name": "My Pharmacy" }
+  }
+]
+```
+
+#### PUT /admin/documents/:id/verify
+
+Verify a document.
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Response (200 OK):**
+```json
+{
+  "message": "Document verified successfully"
+}
+```
+
+#### PUT /admin/documents/:id/reject
+
+Reject a document.
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Request Body:**
+```json
+{
+  "reason": "Document is blurry and unreadable"
+}
+```
+
+---
+
+## Frontend Integration Guide
+
+### Setting Up API Client
+
+#### Using Fetch API
+
+```javascript
+const API_BASE_URL = 'https://backend-21.vercel.app/api';
+
+class ApiClient {
+  constructor() {
+    this.baseUrl = API_BASE_URL;
+  }
+
+  getToken() {
+    return localStorage.getItem('token');
+  }
+
+  async request(endpoint, options = {}) {
+    const token = this.getToken();
+    const headers = {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    };
+
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${this.baseUrl}${endpoint}`, {
+      ...options,
+      headers,
+    });
+
+    if (response.status === 401) {
+      // Token expired or invalid
+      localStorage.removeItem('token');
+      window.location.href = '/login';
+      throw new Error('Session expired');
+    }
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Request failed');
+    }
+
+    return data;
+  }
+
+  get(endpoint) {
+    return this.request(endpoint, { method: 'GET' });
+  }
+
+  post(endpoint, body) {
+    return this.request(endpoint, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  put(endpoint, body) {
+    return this.request(endpoint, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    });
+  }
+
+  delete(endpoint) {
+    return this.request(endpoint, { method: 'DELETE' });
+  }
+}
+
+export const api = new ApiClient();
+```
+
+#### Using Axios
+
+```javascript
+import axios from 'axios';
+
+const API_BASE_URL = 'https://backend-21.vercel.app/api';
+
+const api = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+// Request interceptor
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
+// Response interceptor
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('token');
+      window.location.href = '/login';
+    }
+    return Promise.reject(error);
+  }
+);
+
+export default api;
+```
+
+### Authentication Flow
+
+```javascript
+// Login
+const login = async (email, password) => {
+  try {
+    const response = await api.post('/auth/login', { email, password });
+    const { token, user } = response;
+    
+    localStorage.setItem('token', token);
+    localStorage.setItem('user', JSON.stringify(user));
+    
+    return user;
+  } catch (error) {
+    console.error('Login failed:', error.message);
+    throw error;
+  }
+};
+
+// Logout
+const logout = () => {
+  localStorage.removeItem('token');
+  localStorage.removeItem('user');
+  window.location.href = '/login';
+};
+
+// Get current user
+const getCurrentUser = async () => {
+  const response = await api.get('/auth/me');
+  return response;
+};
+```
+
+### Making API Requests
+
+```javascript
+// Get medicines
+const getMedicines = async () => {
+  return await api.get('/inventory/medicines');
+};
+
+// Create a sale
+const createSale = async (saleData) => {
+  return await api.post('/sales', saleData);
+};
+
+// Initialize payment
+const initializePayment = async (paymentData) => {
+  return await api.post('/payments/chapa/initialize', paymentData);
+};
+```
+
+---
+
+## UI Update Procedures
+
+### Cache Invalidation
+
+When data changes on the server, the frontend should invalidate relevant caches:
+
+```javascript
+// Cache keys
+const CACHE_KEYS = {
+  MEDICINES: 'medicines_cache',
+  SALES: 'sales_cache',
+  INVENTORY: 'inventory_cache',
+  USERS: 'users_cache',
+};
+
+// Clear specific cache
+const invalidateCache = (key) => {
+  localStorage.removeItem(key);
+};
+
+// Clear all caches
+const clearAllCaches = () => {
+  Object.values(CACHE_KEYS).forEach(key => invalidateCache(key));
+};
+
+// After mutations, invalidate relevant caches
+const handleSaleCreated = () => {
+  invalidateCache(CACHE_KEYS.SALES);
+  invalidateCache(CACHE_KEYS.INVENTORY);
+  // Refresh data
+  fetchSales();
+};
+```
+
+### Handling Real-Time Updates
+
+Since this API doesn't use WebSockets, implement polling for real-time data:
+
+```javascript
+// Polling utility
+const createPoller = (interval, callback) => {
+  let isPolling = false;
+  let timerId = null;
+
+  const start = () => {
+    if (isPolling) return;
+    isPolling = true;
+    poll();
+  };
+
+  const stop = () => {
+    isPolling = false;
+    if (timerId) clearInterval(timerId);
+  };
+
+  const poll = async () => {
+    if (!isPolling) return;
+    try {
+      await callback();
+    } catch (error) {
+      console.error('Polling error:', error);
+    }
+    timerId = setTimeout(poll, interval);
+  };
+
+  return { start, stop };
+};
+
+// Usage for sales dashboard
+const salesPoller = createPoller(30000, async () => {
+  const sales = await api.get('/sales');
+  updateSalesUI(sales);
+});
+
+// Start polling when component mounts
+salesPoller.start();
+
+// Stop when component unmounts
+salesPoller.stop();
+```
+
+### Optimistic UI Updates
+
+For better user experience, implement optimistic updates:
+
+```javascript
+const createOptimisticUpdate = async (
+  apiCall,
+  updateStore,
+  rollbackOnError = true
+) => {
+  const previousState = getStoreState();
+
+  // Optimistically update UI
+  updateStore();
+
+  try {
+    await apiCall();
+  } catch (error) {
+    if (rollbackOnError) {
+      // Rollback on error
+      setStoreState(previousState);
+    }
+    throw error;
+  }
+};
+
+// Example: Optimistic sale creation
+const createSaleOptimistic = async (saleData) => {
+  const previousSales = sales;
+
+  // Optimistically add sale to UI
+  const optimisticSale = { ...saleData, id: 'temp-' + Date.now() };
+  setSales([optimisticSale, ...sales]);
+
+  try {
+    const response = await api.post('/sales', saleData);
+    // Replace optimistic sale with real one
+    setSales(sales.map(s => 
+      s.id === optimisticSale.id ? response : s
+    ));
+  } catch (error) {
+    // Rollback
+    setSales(previousSales);
+    throw error;
+  }
+};
+```
+
+---
+
+## System Flow
+
+### User Authentication Flow
+
+```mermaid
+graph TD
+    A[User enters credentials] --> B[POST /auth/login]
+    B --> C{Valid credentials?}
+    C -->|Yes| D[Generate JWT token]
+    D --> E[Return token + user data]
+    E --> F[Frontend stores token]
+    F --> G[Include token in Authorization header]
+    G --> H[Access protected endpoints]
+    C -->|No| I[Return 401 error]
+```
+
+### Sale Processing Flow
+
+```mermaid
+graph TD
+    A[Pharmacist creates sale] --> B[POST /sales]
+    B --> C[Validate inventory]
+    C --> D{Sufficient stock?}
+    D -->|Yes| E[Create sale record]
+    E --> F[Decrement stock]
+    F --> G{Payment method?}
+    G -->|Cash| H[Complete sale]
+    G -->|Chapa| I[Initialize Chapa payment]
+    I --> J[Redirect to checkout]
+    J --> K[Customer completes payment]
+    K --> L[Webhook updates sale status]
+    L --> H
+    D -->|No| M[Return error]
+```
+
+### Registration Flow
+
+```mermaid
+graph TD
+    A[User starts registration] --> B[POST /auth/register/start]
+    B --> C[Submit personal info]
+    C --> D[POST /auth/register/step1]
+    D --> E[Submit pharmacy info]
+    E --> F[POST /auth/register/step2]
+    F --> G[Upload documents]
+    G --> H[POST /auth/register/upload]
+    H --> I[Select plan]
+    I --> J[POST /auth/register/step3]
+    J --> K[Submit application]
+    K --> L[POST /auth/register/submit]
+    L --> M[Admin reviews]
+    M --> N{Approved?}
+    N -->|Yes| O[Create pharmacy + user]
+    N -->|No| P[Mark as rejected]
+```
+
+---
+
+## Error Handling
+
+### HTTP Status Codes
+
+| Code | Description |
+|------|-------------|
+| 200 | Success |
+| 201 | Created |
+| 400 | Bad Request - Invalid input |
+| 401 | Unauthorized - Authentication required |
+| 403 | Forbidden - Insufficient permissions |
+| 404 | Not Found - Resource doesn't exist |
+| 409 | Conflict - Duplicate entry |
+| 413 | Payload Too Large - File too big |
+| 429 | Too Many Requests - Rate limit exceeded |
+| 500 | Internal Server Error |
+
+### Error Response Format
+
+```json
+{
+  "error": "Error message description"
+}
+```
+
+### Common Error Codes
+
+| Error | Code | Description | Solution |
+|-------|------|-------------|----------|
+| Invalid credentials | 401 | Email or password incorrect | Verify credentials |
+| Token expired | 401 | JWT token has expired | Re-authenticate |
+| No token | 401 | No token provided | Include token in header |
+| Insufficient permissions | 403 | User role doesn't have access | Check user roles |
+| Not found | 404 | Resource doesn't exist | Verify resource ID |
+| Missing fields | 400 | Required fields missing | Check request body |
+| Rate limited | 429 | Too many requests | Wait and retry |
+
+### Handling Errors in Frontend
+
+```javascript
+// Global error handler
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const errorMessage = error.response?.data?.error || error.message;
+    
+    switch (error.response?.status) {
+      case 401:
+        toast.error('Session expired. Please login again.');
+        logout();
+        break;
+      case 403:
+        toast.error('You do not have permission to perform this action.');
+        break;
+      case 404:
+        toast.error('Resource not found.');
+        break;
+      case 429:
+        toast.error('Too many requests. Please wait a moment.');
+        break;
+      default:
+        toast.error(errorMessage || 'An error occurred.');
+    }
+    
+    return Promise.reject(error);
+  }
+);
+```
+
+---
+
+## Rate Limiting & Pagination
+
+### Rate Limiting
+
+The API implements rate limiting to prevent abuse:
+
+| Endpoint Type | Limit | Window |
+|---------------|-------|--------|
+| Authentication | 5 requests | 15 minutes |
+| General API | 100 requests | 15 minutes |
+| Webhooks | 50 requests | 1 minute |
+
+**Rate Limit Headers:**
+- `Retry-After` - Seconds until reset (when limited)
+
+**Response (429 Too Many Requests):**
+```json
+{
+  "error": "Too many requests, please try again later",
+  "retryAfter": 120
+}
+```
+
+### Pagination
+
+For list endpoints, use query parameters:
+
+```
+GET /users?page=1&limit=20
+```
+
+| Parameter | Default | Max |
+|-----------|---------|-----|
+| page | 1 | - |
+| limit | 20 | 100 |
+
+**Response Format:**
+```json
+{
+  "data": [...],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 100,
+    "totalPages": 5
+  }
+}
+```
+
+---
+
+## Sample Code Snippets
+
+### React Integration
+
+```jsx
+import React, { useState, useEffect, createContext, useContext } from 'react';
+import api from './api';
+
+// Auth Context
+const AuthContext = createContext(null);
+
+export const AuthProvider = ({ children }) => {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      api.get('/auth/me')
+        .then(setUser)
+        .catch(() => logout())
+        .finally(() => setLoading(false));
+    } else {
+      setLoading(false);
+    }
+  }, []);
+
+  const login = async (email, password) => {
+    const response = await api.post('/auth/login', { email, password });
+    localStorage.setItem('token', response.token);
+    setUser(response.user);
+    return response.user;
+  };
+
+  const logout = () => {
+    localStorage.removeItem('token');
+    setUser(null);
+  };
+
+  return (
+    <AuthContext.Provider value={{ user, login, logout, loading }}>
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+export const useAuth = () => useContext(AuthContext);
+
+// Protected Route Component
+const ProtectedRoute = ({ children, roles }) => {
+  const { user, loading } = useAuth();
+
+  if (loading) return <div>Loading...</div>;
+
+  if (!user) {
+    return <Navigate to="/login" />;
+  }
+
+  if (roles && !roles.some(r => user.roles.includes(r))) {
+    return <Navigate to="/unauthorized" />;
+  }
+
+  return children;
+};
+
+// Usage
+const MedicinesPage = () => {
+  const [medicines, setMedicines] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.get('/inventory/medicines')
+      .then(setMedicines)
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <div>Loading medicines...</div>;
+
+  return (
+    <div>
+      <h1>Medicines</h1>
+      {medicines.map(med => (
+        <div key={med.id}>{med.name}</div>
+      ))}
+    </div>
+  );
+};
+
+// Protected Route Usage
+<ProtectedRoute roles={['admin', 'manager', 'pharmacist']}>
+  <MedicinesPage />
+</ProtectedRoute>
+```
+
+### Vue 3 Integration
+
+```javascript
+// composables/useApi.js
+import { ref } from 'vue';
+import api from './api';
+
+export function useApi() {
+  const loading = ref(false);
+  const error = ref(null);
+
+  const execute = async (fn) => {
+    loading.value = true;
+    error.value = null;
+    try {
+      return await fn();
+    } catch (e) {
+      error.value = e.response?.data?.error || e.message;
+      throw e;
+    } finally {
+      loading.value = false;
+    }
+  };
+
+  return { loading, error, execute };
+}
+
+// composables/useAuth.js
+import { ref, computed } from 'vue';
+import { useRouter } from 'vue-router';
+import api from './api';
+
+export function useAuth() {
+  const user = ref(null);
+  const router = useRouter();
+
+  const login = async (email, password) => {
+    const response = await api.post('/auth/login', { email, password });
+    localStorage.setItem('token', response.token);
+    user.value = response.user;
+    return response.user;
+  };
+
+  const logout = () => {
+    localStorage.removeItem('token');
+    user.value = null;
+    router.push('/login');
+  };
+
+  const fetchUser = async () => {
+    try {
+      user.value = await api.get('/auth/me');
+    } catch {
+      logout();
+    }
+  };
+
+  const isAuthenticated = computed(() => !!user.value);
+
+  return { user, login, logout, fetchUser, isAuthenticated };
+}
+
+// Component usage
+<script setup>
+import { onMounted } from 'vue';
+import { useApi } from './composables/useApi';
+import { useAuth } from './composables/useAuth';
+
+const { loading, error, execute } = useApi();
+const { user } = useAuth();
+
+const medicines = ref([]);
+
+const fetchMedicines = async () => {
+  medicines.value = await execute(() => api.get('/inventory/medicines'));
+};
+
+onMounted(fetchMedicines);
+</script>
+
+<template>
+  <div>
+    <div v-if="loading">Loading...</div>
+    <div v-else-if="error">{{ error }}</div>
+    <div v-else>
+      <div v-for="med in medicines" :key="med.id">
+        {{ med.name }}
+      </div>
+    </div>
+  </div>
+</template>
+```
+
+### Handling File Uploads
+
+```javascript
+// Upload document
+const uploadDocument = async (file, documentType) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('documentType', documentType);
+
+  const response = await fetch(`${API_BASE_URL}/upload/document`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${localStorage.getItem('token')}`,
+    },
+    body: formData,
+  });
+
+  return response.json();
+};
+
+// Import medicines from file
+const importMedicines = async (file, branchId) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  if (branchId) {
+    formData.append('branchId', branchId);
+  }
+
+  const response = await fetch(`${API_BASE_URL}/import/medicines`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${localStorage.getItem('token')}`,
+    },
+    body: formData,
+  });
+
+  return response.json();
+};
+```
+
+### Handling Payment Flow
+
+```javascript
+// Complete payment flow
+const handlePayment = async (saleId, customerInfo) => {
+  try {
+    // 1. Initialize payment
+    const { checkout_url, tx_ref } = await api.post('/payments/chapa/initialize', {
+      saleId,
+      customerEmail: customerInfo.email,
+      customerFirstName: customerInfo.firstName,
+      customerLastName: customerInfo.lastName,
+    });
+
+    // 2. Redirect to Chapa checkout
+    window.location.href = checkout_url;
+    
+    // Note: After payment, user will be redirected back via callback URL
+    // The sale status will be updated via webhook
+  } catch (error) {
+    console.error('Payment initialization failed:', error);
+    throw error;
+  }
+};
+
+// Verify payment status
+const verifyPayment = async (txRef) => {
+  try {
+    const result = await api.get(`/payments/chapa/verify/${txRef}`);
+    return result;
+  } catch (error) {
+    console.error('Payment verification failed:', error);
+    throw error;
+  }
+};
+```
+
+---
+
+## Version Information
+
+- **API Version:** v1 (current)
+- **Base Path:** `/api`
+- **Document Version:** 1.0.0
+- **Last Updated:** 2024
+
+---
+
+## Support
+
+For API-related questions or issues:
+- Email: support@pharmacaref.com
+- Documentation: https://docs.pharmacaref.com

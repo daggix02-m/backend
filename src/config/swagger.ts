@@ -26,6 +26,18 @@ const options: swaggerJsdoc.Options = {
         description: 'Production server',
       },
     ],
+    tags: [
+      { name: 'Auth', description: 'Authentication endpoints' },
+      { name: 'Admin', description: 'Admin-only endpoints' },
+      { name: 'Manager', description: 'Manager-only endpoints' },
+      { name: 'Pharmacist', description: 'Pharmacist-only endpoints' },
+      { name: 'Cashier', description: 'Cashier-only endpoints' },
+      { name: 'Pharmacies', description: 'Pharmacy management' },
+      { name: 'Users', description: 'User management' },
+      { name: 'Inventory', description: 'Inventory management' },
+      { name: 'Sales', description: 'Sales management' },
+      { name: 'Payments', description: 'Payment processing' },
+    ],
     components: {
       securitySchemes: {
         bearerAuth: {
@@ -299,7 +311,7 @@ const options: swaggerJsdoc.Options = {
       },
     ],
   },
-  apis: ['./src/routes/*.ts', './src/app.ts'],
+  apis: ['./src/routes/*.ts', './src/routes/**/*.ts', './src/app.ts'],
 };
 
 export const swaggerSpec = swaggerJsdoc(options);

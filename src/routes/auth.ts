@@ -2,15 +2,13 @@ import { Router, Request, Response } from 'express';
 import { supabase as supabaseClient } from '../lib/prisma';
 import { AuthUtils } from '../lib/auth';
 import { AuthRequest, authenticate } from '../middleware/auth';
+import registerRoutes from './auth/register';
 
 const router = Router();
 const supabase = supabaseClient as any;
 
-/**
- * @route   POST /api/auth/register
- * @desc    Register a new user
- * @access  Public
- */
+router.use('/register', registerRoutes);
+
 router.post('/register', async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, password, fullName, pharmacyId, roles = ['pharmacist'] } = req.body;
@@ -127,7 +125,6 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Find user
     const { data: user } = await supabase
       .from('users')
       .select(`
@@ -137,6 +134,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
         password_hash,
         pharmacy_id,
         is_active,
+        is_owner,
         must_change_password,
         user_roles (
           role:roles (
@@ -152,13 +150,11 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Check if user is active
     if (!user.is_active) {
       res.status(401).json({ error: 'Account is inactive' });
       return;
     }
 
-    // Verify password
     const isValidPassword = await AuthUtils.comparePassword(password, user.password_hash);
 
     if (!isValidPassword) {
@@ -166,15 +162,14 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Get roles
     const roles = user.user_roles?.map((ur: any) => ur.role?.name) || [];
 
-    // Generate token
     const tokenPayload = {
       userId: user.id,
       pharmacyId: user.pharmacy_id,
       email: user.email,
       roles,
+      isOwner: user.is_owner || false,
     };
 
     const token = AuthUtils.generateToken(tokenPayload);
@@ -188,6 +183,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
         fullName: user.full_name,
         pharmacyId: user.pharmacy_id,
         roles,
+        isOwner: user.is_owner || false,
         mustChangePassword: user.must_change_password,
       },
     });
@@ -281,6 +277,7 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response): Promise
         full_name,
         pharmacy_id,
         is_active,
+        is_owner,
         must_change_password,
         user_roles (
           role:roles (
@@ -316,12 +313,117 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response): Promise
       fullName: user.full_name,
       pharmacyId: user.pharmacy_id,
       roles,
+      isOwner: user.is_owner || false,
       branches,
       isActive: user.is_active,
       mustChangePassword: user.must_change_password,
     });
   } catch (error) {
     console.error('Get user error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.post('/forgot-password', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      res.status(400).json({ error: 'Email is required' });
+      return;
+    }
+
+    const { data: user } = await supabase
+      .from('users')
+      .select('id, email, full_name')
+      .eq('email', email)
+      .single();
+
+    if (user) {
+      const resetToken = AuthUtils.generatePasswordResetToken({ userId: user.id, email: user.email });
+      
+      await supabase.from('password_reset_tokens').insert({
+        user_id: user.id,
+        token: resetToken,
+        expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        created_at: new Date().toISOString()
+      });
+
+      console.log(`Password reset token for ${email}: ${resetToken}`);
+    }
+
+    res.json({ 
+      message: 'If an account with that email exists, a password reset link has been sent.' 
+    });
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.post('/reset-password', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { token, newPassword } = req.body;
+
+    if (!token || !newPassword) {
+      res.status(400).json({ error: 'Token and new password are required' });
+      return;
+    }
+
+    if (newPassword.length < 8) {
+      res.status(400).json({ error: 'Password must be at least 8 characters' });
+      return;
+    }
+
+    const { data: resetToken } = await supabase
+      .from('password_reset_tokens')
+      .select('id, user_id, expires_at, used_at')
+      .eq('token', token)
+      .single();
+
+    if (!resetToken) {
+      res.status(400).json({ error: 'Invalid or expired token' });
+      return;
+    }
+
+    if (resetToken.used_at) {
+      res.status(400).json({ error: 'Token has already been used' });
+      return;
+    }
+
+    if (new Date(resetToken.expires_at) < new Date()) {
+      res.status(400).json({ error: 'Token has expired' });
+      return;
+    }
+
+    const passwordHash = await AuthUtils.hashPassword(newPassword);
+
+    await supabase
+      .from('users')
+      .update({
+        password_hash: passwordHash,
+        must_change_password: false,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', resetToken.user_id);
+
+    await supabase
+      .from('password_reset_tokens')
+      .update({ used_at: new Date().toISOString() })
+      .eq('id', resetToken.id);
+
+    res.json({ message: 'Password reset successfully' });
+  } catch (error) {
+    console.error('Reset password error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.post('/logout', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    res.json({ message: 'Logged out successfully' });
+  } catch (error) {
+    console.error('Logout error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

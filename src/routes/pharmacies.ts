@@ -1,39 +1,41 @@
 import { Router, Response } from 'express';
-import { prisma } from '../lib/prisma';
+import { supabase as supabaseClient } from '../lib/supabase';
 import { AuthRequest, authenticate, authorize } from '../middleware/auth';
 
 const router = Router();
+const supabase = supabaseClient as any;
 
-/**
- * @route   GET /api/pharmacies
- * @desc    Get all pharmacies (Super Admin only or similar)
- * @access  Private
- */
 router.get('/', authenticate, authorize('admin'), async (req: AuthRequest, res: Response) => {
   try {
-    const pharmacies = await prisma.pharmacy.findMany();
-    res.json(pharmacies);
+    const { data: pharmacies, error } = await supabase
+      .from('pharmacies')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching pharmacies:', error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+
+    res.json(pharmacies || []);
   } catch (error) {
     console.error('Error fetching pharmacies:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-/**
- * @route   GET /api/pharmacies/my
- * @desc    Get current user's pharmacy details
- * @access  Private
- */
 router.get('/my', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const pharmacy = await prisma.pharmacy.findUnique({
-      where: { id: req.user!.pharmacyId },
-      include: {
-        branches: true,
-      },
-    });
+    const { data: pharmacy, error } = await supabase
+      .from('pharmacies')
+      .select(`
+        *,
+        branches (*)
+      `)
+      .eq('id', req.user!.pharmacyId)
+      .single();
 
-    if (!pharmacy) {
+    if (error || !pharmacy) {
       return res.status(404).json({ error: 'Pharmacy not found' });
     }
 
@@ -44,28 +46,29 @@ router.get('/my', authenticate, async (req: AuthRequest, res: Response) => {
   }
 });
 
-/**
- * @route   PUT /api/pharmacies/my
- * @desc    Update current user's pharmacy details
- * @access  Private (Admin only)
- */
 router.put('/my', authenticate, authorize('admin'), async (req: AuthRequest, res: Response) => {
   try {
     const { name, licenseNumber, address, phone, email, tin, logoUrl, website } = req.body;
 
-    const pharmacy = await prisma.pharmacy.update({
-      where: { id: req.user!.pharmacyId },
-      data: {
+    const { data: pharmacy, error } = await supabase
+      .from('pharmacies')
+      .update({
         name,
-        licenseNumber,
+        license_number: licenseNumber,
         address,
         phone,
         email,
-        tin,
-        logoUrl,
-        website,
-      },
-    });
+        tin_number: tin,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', req.user!.pharmacyId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error updating pharmacy:', error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
 
     res.json(pharmacy);
   } catch (error) {
@@ -74,28 +77,26 @@ router.put('/my', authenticate, authorize('admin'), async (req: AuthRequest, res
   }
 });
 
-/**
- * @route   GET /api/pharmacies/branches
- * @desc    Get all branches of the current pharmacy
- * @access  Private
- */
 router.get('/branches', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const branches = await prisma.branch.findMany({
-      where: { pharmacyId: req.user!.pharmacyId },
-    });
-    res.json(branches);
+    const { data: branches, error } = await supabase
+      .from('branches')
+      .select('*')
+      .eq('pharmacy_id', req.user!.pharmacyId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching branches:', error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+
+    res.json(branches || []);
   } catch (error) {
     console.error('Error fetching branches:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-/**
- * @route   POST /api/pharmacies/branches
- * @desc    Create a new branch
- * @access  Private (Admin only)
- */
 router.post('/branches', authenticate, authorize('admin'), async (req: AuthRequest, res: Response) => {
   try {
     const { name, location, phone, email, isMainBranch } = req.body;
@@ -104,24 +105,33 @@ router.post('/branches', authenticate, authorize('admin'), async (req: AuthReque
       return res.status(400).json({ error: 'Name and location are required' });
     }
 
-    // If setting as main branch, unset other main branches for this pharmacy
     if (isMainBranch) {
-      await prisma.branch.updateMany({
-        where: { pharmacyId: req.user!.pharmacyId },
-        data: { isMainBranch: false },
-      });
+      await supabase
+        .from('branches')
+        .update({ is_main_branch: false })
+        .eq('pharmacy_id', req.user!.pharmacyId);
     }
 
-    const branch = await prisma.branch.create({
-      data: {
+    const { data: branch, error } = await supabase
+      .from('branches')
+      .insert({
         name,
         location,
         phone,
         email,
-        isMainBranch: isMainBranch || false,
-        pharmacyId: req.user!.pharmacyId,
-      },
-    });
+        is_main_branch: isMainBranch || false,
+        is_active: true,
+        pharmacy_id: req.user!.pharmacyId,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error creating branch:', error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
 
     res.status(201).json(branch);
   } catch (error) {
@@ -130,11 +140,6 @@ router.post('/branches', authenticate, authorize('admin'), async (req: AuthReque
   }
 });
 
-/**
- * @route   PUT /api/pharmacies/branches/:id
- * @desc    Update a branch
- * @access  Private (Admin only)
- */
 router.put('/branches/:id', authenticate, authorize('admin'), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
@@ -142,34 +147,42 @@ router.put('/branches/:id', authenticate, authorize('admin'), async (req: AuthRe
 
     const branchId = parseInt(id as string);
 
-    // Ensure branch belongs to this pharmacy
-    const existingBranch = await prisma.branch.findFirst({
-      where: { id: branchId, pharmacyId: req.user!.pharmacyId },
-    });
+    const { data: existingBranch } = await supabase
+      .from('branches')
+      .select('id, pharmacy_id')
+      .eq('id', branchId)
+      .single();
 
-    if (!existingBranch) {
+    if (!existingBranch || existingBranch.pharmacy_id !== req.user!.pharmacyId) {
       return res.status(404).json({ error: 'Branch not found or unauthorized' });
     }
 
-    // If setting as main branch, unset other main branches for this pharmacy
     if (isMainBranch) {
-      await prisma.branch.updateMany({
-        where: { pharmacyId: req.user!.pharmacyId },
-        data: { isMainBranch: false },
-      });
+      await supabase
+        .from('branches')
+        .update({ is_main_branch: false })
+        .eq('pharmacy_id', req.user!.pharmacyId);
     }
 
-    const branch = await prisma.branch.update({
-      where: { id: branchId },
-      data: {
+    const { data: branch, error } = await supabase
+      .from('branches')
+      .update({
         name,
         location,
         phone,
         email,
-        isMainBranch,
-        isActive,
-      },
-    });
+        is_main_branch: isMainBranch,
+        is_active: isActive,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', branchId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error updating branch:', error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
 
     res.json(branch);
   } catch (error) {

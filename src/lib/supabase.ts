@@ -85,6 +85,12 @@ function getTableName(modelName: string): string {
     refundItem: 'refund_items',
     stockMovement: 'stock_movements',
     paymentMethod: 'payment_methods',
+    subscriptionPlan: 'subscription_plans',
+    pharmacySubscription: 'pharmacy_subscriptions',
+    pharmacyDocument: 'pharmacy_documents',
+    registrationApplication: 'registration_applications',
+    passwordResetToken: 'password_reset_tokens',
+    restockRequest: 'restock_requests',
   };
   return mapping[modelName] || modelName;
 }
@@ -327,6 +333,12 @@ function createPrismaLikeClient(client: Supabase) {
     'refundItem',
     'stockMovement',
     'paymentMethod',
+    'subscriptionPlan',
+    'pharmacySubscription',
+    'pharmacyDocument',
+    'registrationApplication',
+    'passwordResetToken',
+    'restockRequest',
   ];
 
   const prismaLike = {} as any;

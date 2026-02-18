@@ -1,16 +1,12 @@
 import { Router, Response } from 'express';
-import { prisma } from '../lib/prisma';
+import { supabase as supabaseClient } from '../lib/supabase';
 import { chapaService, ChapaWebhookPayload } from '../lib/chapa';
 import { AuthRequest, authenticate } from '../middleware/auth';
 import { config } from '../config';
 
 const router = Router();
+const supabase = supabaseClient as any;
 
-/**
- * @route   POST /api/payments/chapa/initialize
- * @desc    Initialize a Chapa payment for a sale
- * @access  Private
- */
 router.post('/chapa/initialize', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const { saleId, customerEmail, customerFirstName, customerLastName } = req.body;
@@ -21,38 +17,38 @@ router.post('/chapa/initialize', authenticate, async (req: AuthRequest, res: Res
       });
     }
 
-    // Fetch the sale details
-    const sale = await prisma.sale.findUnique({
-      where: { id: saleId },
-      include: {
-        branch: true,
-      },
-    });
+    const { data: sale } = await supabase
+      .from('sales')
+      .select(`
+        id,
+        total_amount,
+        branch_id,
+        branches (
+          pharmacy_id
+        )
+      `)
+      .eq('id', saleId)
+      .single();
 
     if (!sale) {
       return res.status(404).json({ error: 'Sale not found' });
     }
 
-    // Check if sale belongs to the user's pharmacy
-    if (sale.branch.pharmacyId !== req.user!.pharmacyId) {
+    if (sale.branches?.pharmacy_id !== req.user!.pharmacyId) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    // Check if sale is already paid
     if (sale.status === 'COMPLETED') {
       return res.status(400).json({ error: 'Sale is already completed' });
     }
 
-    // Generate transaction reference
     const txRef = chapaService.generateTxRef('PHARMA');
 
-    // Create callback URL
     const callbackUrl = `${req.protocol}://${req.get('host')}/api/payments/chapa/callback`;
     const returnUrl = `${req.protocol}://${req.get('host')}/api/payments/chapa/return`;
 
-    // Initialize payment with Chapa
     const chapaResponse = await chapaService.initializePayment({
-      amount: parseFloat(sale.totalAmount.toString()),
+      amount: parseFloat(sale.total_amount),
       currency: 'ETB',
       email: customerEmail,
       first_name: customerFirstName,
@@ -66,20 +62,18 @@ router.post('/chapa/initialize', authenticate, async (req: AuthRequest, res: Res
       },
       meta: {
         sale_id: saleId,
-        pharmacy_id: sale.branch.pharmacyId,
-        branch_id: sale.branchId,
+        pharmacy_id: sale.branches?.pharmacy_id,
+        branch_id: sale.branch_id,
       },
     });
 
-    // Create payment transaction record
-    await prisma.paymentTransaction.create({
-      data: {
-        paymentId: sale.id, // This should be the actual payment ID
-        provider: 'chapa',
-        txRef: txRef,
-        rawResponse: chapaResponse as any,
-        verified: false,
-      },
+    await supabase.from('payment_transactions').insert({
+      payment_id: sale.id,
+      provider: 'chapa',
+      tx_ref: txRef,
+      verified: false,
+      raw_response: chapaResponse,
+      created_at: new Date().toISOString(),
     });
 
     res.json({
@@ -94,63 +88,63 @@ router.post('/chapa/initialize', authenticate, async (req: AuthRequest, res: Res
   }
 });
 
-/**
- * @route   GET /api/payments/chapa/verify/:txRef
- * @desc    Verify a Chapa payment transaction
- * @access  Private
- */
 router.get('/chapa/verify/:txRef', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const { txRef } = req.params;
 
-    // Verify payment with Chapa
     const verificationResponse = await chapaService.verifyPayment(txRef as string);
 
-    // Update payment transaction record
-    const transaction = await prisma.paymentTransaction.findUnique({
-      where: { txRef: txRef as string },
-      include: {
-        payment: {
-          include: {
-            sale: {
-              include: {
-                branch: true,
-              },
-            },
-          },
-        },
-      },
-    });
+    const { data: transaction } = await supabase
+      .from('payment_transactions')
+      .select(`
+        id,
+        payment_id,
+        payments (
+          id,
+          sale_id,
+          sales (
+            id,
+            branch_id,
+            branches (
+              pharmacy_id
+            )
+          )
+        )
+      `)
+      .eq('tx_ref', txRef as string)
+      .single();
 
     if (!transaction) {
       return res.status(404).json({ error: 'Transaction not found' });
     }
 
-    // Check if transaction belongs to user's pharmacy
-    if (transaction.payment.sale.branch.pharmacyId !== req.user!.pharmacyId) {
+    const payment = transaction.payments as any;
+    const sale = payment?.sales as any;
+    const branch = sale?.branches as any;
+
+    if (branch?.pharmacy_id !== req.user!.pharmacyId) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    // Update transaction record
-    await prisma.paymentTransaction.update({
-      where: { id: transaction.id },
-      data: {
+    await supabase
+      .from('payment_transactions')
+      .update({
         verified: true,
-        rawResponse: verificationResponse as any,
-      },
-    });
+        raw_response: verificationResponse,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', transaction.id);
 
-    // If payment is successful, update sale status
     if (chapaService.isPaymentSuccessful(verificationResponse)) {
-      await prisma.sale.update({
-        where: { id: transaction.payment.sale.id },
-        data: { status: 'COMPLETED' },
-      });
+      await supabase
+        .from('sales')
+        .update({ status: 'COMPLETED', updated_at: new Date().toISOString() })
+        .eq('id', sale?.id);
 
-      await prisma.payment.update({
-        where: { id: transaction.payment.id },
-        data: { status: 'completed' },
-      });
+      await supabase
+        .from('payments')
+        .update({ status: 'completed', updated_at: new Date().toISOString() })
+        .eq('id', payment?.id);
     }
 
     res.json(verificationResponse);
@@ -162,88 +156,77 @@ router.get('/chapa/verify/:txRef', authenticate, async (req: AuthRequest, res: R
   }
 });
 
-/**
- * @route   POST /api/payments/chapa/webhook
- * @desc    Handle Chapa webhook events
- * @access  Public (but secured with signature)
- */
 router.post('/chapa/webhook', async (req: any, res: Response) => {
   const signature = req.headers['chapa-signature'] as string;
   const payload = req.body as ChapaWebhookPayload;
 
-  // Log webhook payload for debugging
   console.log('Webhook received:', JSON.stringify(payload));
 
   try {
-    // Validate webhook signature
     if (!signature || !chapaService.validateWebhookSignature(payload, signature)) {
       console.error('Invalid webhook signature:', signature);
       return res.status(401).json({ error: 'Invalid signature' });
     }
 
-    // Process webhook event
     const eventData = chapaService.processWebhookEvent(payload);
 
-    // Find the transaction
-    const transaction = await prisma.paymentTransaction.findUnique({
-      where: { txRef: eventData.txRef },
-      include: {
-        payment: {
-          include: {
-            sale: {
-              include: {
-                branch: true,
-              },
-            },
-          },
-        },
-      },
-    });
+    const { data: transaction } = await supabase
+      .from('payment_transactions')
+      .select(`
+        id,
+        verified,
+        payment_id,
+        payments (
+          id,
+          sale_id
+        )
+      `)
+      .eq('tx_ref', eventData.txRef)
+      .single();
 
     if (!transaction) {
       console.error('Transaction not found:', eventData.txRef);
       return res.status(404).json({ error: 'Transaction not found' });
     }
 
-    // Check idempotency - prevent duplicate processing
     if (transaction.verified) {
       console.log('Transaction already processed:', eventData.txRef);
       return res.json({ received: true, status: 'already_processed' });
     }
 
-    // Update transaction record
-    await prisma.paymentTransaction.update({
-      where: { id: transaction.id },
-      data: {
+    await supabase
+      .from('payment_transactions')
+      .update({
         verified: true,
-        rawResponse: payload as any,
-      },
-    });
+        raw_response: payload,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', transaction.id);
 
-    // Handle successful payment
+    const payment = transaction.payments as any;
+
     if (eventData.event === 'transaction.successful' && eventData.status === 'success') {
-      await prisma.sale.update({
-        where: { id: transaction.payment.sale.id },
-        data: { status: 'COMPLETED' },
-      });
+      await supabase
+        .from('sales')
+        .update({ status: 'COMPLETED', updated_at: new Date().toISOString() })
+        .eq('id', payment?.sale_id);
 
-      await prisma.payment.update({
-        where: { id: transaction.payment.id },
-        data: { status: 'completed' },
-      });
+      await supabase
+        .from('payments')
+        .update({ status: 'completed', updated_at: new Date().toISOString() })
+        .eq('id', payment?.id);
     }
 
-    // Handle failed payment
     if (eventData.event === 'transaction.failed' || eventData.status === 'failed') {
-      await prisma.sale.update({
-        where: { id: transaction.payment.sale.id },
-        data: { status: 'FAILED' },
-      });
+      await supabase
+        .from('sales')
+        .update({ status: 'FAILED', updated_at: new Date().toISOString() })
+        .eq('id', payment?.sale_id);
 
-      await prisma.payment.update({
-        where: { id: transaction.payment.id },
-        data: { status: 'failed' },
-      });
+      await supabase
+        .from('payments')
+        .update({ status: 'failed', updated_at: new Date().toISOString() })
+        .eq('id', payment?.id);
     }
 
     res.json({ received: true });
@@ -253,11 +236,6 @@ router.post('/chapa/webhook', async (req: any, res: Response) => {
   }
 });
 
-/**
- * @route   GET /api/payments/chapa/callback
- * @desc    Handle Chapa callback (redirect after payment)
- * @access  Public
- */
 router.get('/chapa/callback', async (req: any, res: Response) => {
   try {
     const { tx_ref } = req.query;
@@ -266,52 +244,48 @@ router.get('/chapa/callback', async (req: any, res: Response) => {
       return res.status(400).json({ error: 'Missing transaction reference' });
     }
 
-    // Verify payment with Chapa
     const verificationResponse = await chapaService.verifyPayment(tx_ref as string);
 
-    // Find the transaction
-    const transaction = await prisma.paymentTransaction.findUnique({
-      where: { txRef: tx_ref as string },
-      include: {
-        payment: {
-          include: {
-            sale: {
-              include: {
-                branch: true,
-              },
-            },
-          },
-        },
-      },
-    });
+    const { data: transaction } = await supabase
+      .from('payment_transactions')
+      .select(`
+        id,
+        payment_id,
+        payments (
+          id,
+          sale_id
+        )
+      `)
+      .eq('tx_ref', tx_ref as string)
+      .single();
 
     if (!transaction) {
       return res.status(404).json({ error: 'Transaction not found' });
     }
 
-    // Update transaction record
-    await prisma.paymentTransaction.update({
-      where: { id: transaction.id },
-      data: {
+    await supabase
+      .from('payment_transactions')
+      .update({
         verified: true,
-        rawResponse: verificationResponse as any,
-      },
-    });
+        raw_response: verificationResponse,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', transaction.id);
 
-    // If payment is successful, update sale status
+    const payment = transaction.payments as any;
+
     if (chapaService.isPaymentSuccessful(verificationResponse)) {
-      await prisma.sale.update({
-        where: { id: transaction.payment.sale.id },
-        data: { status: 'COMPLETED' },
-      });
+      await supabase
+        .from('sales')
+        .update({ status: 'COMPLETED', updated_at: new Date().toISOString() })
+        .eq('id', payment?.sale_id);
 
-      await prisma.payment.update({
-        where: { id: transaction.payment.id },
-        data: { status: 'completed' },
-      });
+      await supabase
+        .from('payments')
+        .update({ status: 'completed', updated_at: new Date().toISOString() })
+        .eq('id', payment?.id);
     }
 
-    // Redirect to frontend with status
     const status = chapaService.isPaymentSuccessful(verificationResponse) ? 'success' : 'failed';
     const frontendUrl = process.env.FRONTEND_URL || config.corsOrigin;
     if (frontendUrl === '*' || !frontendUrl) {
@@ -328,11 +302,6 @@ router.get('/chapa/callback', async (req: any, res: Response) => {
   }
 });
 
-/**
- * @route   GET /api/payments/chapa/return
- * @desc    Handle Chapa return (user returns from payment page)
- * @access  Public
- */
 router.get('/chapa/return', async (req: any, res: Response) => {
   try {
     const { tx_ref } = req.query;
@@ -341,7 +310,6 @@ router.get('/chapa/return', async (req: any, res: Response) => {
       return res.status(400).json({ error: 'Missing transaction reference' });
     }
 
-    // Redirect to frontend for processing
     const frontendUrl = config.corsOrigin === '*' ? 'http://localhost:3000' : config.corsOrigin;
     res.redirect(`${frontendUrl}/payment/return?tx_ref=${tx_ref}`);
   } catch (error: any) {
@@ -354,49 +322,51 @@ router.get('/chapa/return', async (req: any, res: Response) => {
   }
 });
 
-/**
- * @route   GET /api/payments/transactions
- * @desc    Get payment transactions for a sale
- * @access  Private
- */
 router.get('/transactions', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const { saleId } = req.query;
 
-    const where: any = {
-      payment: {
-        sale: {
-          pharmacyId: req.user!.pharmacyId,
-        },
-      },
-    };
+    let query = supabase
+      .from('payment_transactions')
+      .select(`
+        id,
+        provider,
+        tx_ref,
+        verified,
+        created_at,
+        payments (
+          id,
+          status,
+          sale_id,
+          payment_methods (
+            id,
+            name
+          ),
+          sales (
+            id,
+            branch_id,
+            branches (
+              name
+            )
+          )
+        )
+      `)
+      .order('created_at', { ascending: false });
 
-    if (saleId) {
-      where.paymentId = parseInt(saleId as string);
+    const { data: transactions, error } = await query;
+
+    if (error) {
+      console.error('Error fetching payment transactions:', error);
+      return res.status(500).json({ error: 'Internal server error' });
     }
 
-    const transactions = await prisma.paymentTransaction.findMany({
-      where,
-      include: {
-        payment: {
-          include: {
-            sale: {
-              include: {
-                branch: {
-                  select: {
-                    name: true,
-                  },
-                },
-              },
-            },
-            paymentMethod: true,
-          },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+    let result = transactions || [];
 
-    res.json(transactions);
+    if (saleId) {
+      result = result.filter((t: any) => t.payments?.sale_id === parseInt(saleId as string));
+    }
+
+    res.json(result);
   } catch (error: any) {
     console.error('Error fetching payment transactions:', error);
     res.status(500).json({ error: 'Internal server error' });
