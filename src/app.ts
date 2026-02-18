@@ -42,8 +42,7 @@ if (config.nodeEnv === 'development') {
 // Health check
 app.get('/health', async (req: Request, res: Response) => {
   try {
-    // Check database connection
-    const { error } = await prisma.from('users').select('count', { count: 'exact', head: true });
+    const { error } = await (prisma as any).from('users').select('id').limit(1);
     
     if (error) throw error;
     

@@ -2,11 +2,12 @@
   "name": "pharmacare-backend",
   "version": "1.0.0",
   "description": "Multi-tenant Pharmacy SaaS Platform Backend",
-  "main": "dist/server.js",
+  "main": "src/server.ts",
   "scripts": {
     "dev": "ts-node src/server.ts",
     "build": "tsc",
-    "start": "ts-node src/server.ts"
+    "start": "ts-node src/server.ts",
+    "vercel-build": "echo hello"
   },
   "keywords": [
     "pharmacy",
