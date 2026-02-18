@@ -168,12 +168,16 @@ router.get('/chapa/verify/:txRef', authenticate, async (req: AuthRequest, res: R
  * @access  Public (but secured with signature)
  */
 router.post('/chapa/webhook', async (req: any, res: Response) => {
-  try {
-    const signature = req.headers['chapa-signature'] as string;
-    const payload = req.body as ChapaWebhookPayload;
+  const signature = req.headers['chapa-signature'] as string;
+  const payload = req.body as ChapaWebhookPayload;
 
+  // Log webhook payload for debugging
+  console.log('Webhook received:', JSON.stringify(payload));
+
+  try {
     // Validate webhook signature
-    if (!chapaService.validateWebhookSignature(payload, signature)) {
+    if (!signature || !chapaService.validateWebhookSignature(payload, signature)) {
+      console.error('Invalid webhook signature:', signature);
       return res.status(401).json({ error: 'Invalid signature' });
     }
 
@@ -197,7 +201,14 @@ router.post('/chapa/webhook', async (req: any, res: Response) => {
     });
 
     if (!transaction) {
+      console.error('Transaction not found:', eventData.txRef);
       return res.status(404).json({ error: 'Transaction not found' });
+    }
+
+    // Check idempotency - prevent duplicate processing
+    if (transaction.verified) {
+      console.log('Transaction already processed:', eventData.txRef);
+      return res.json({ received: true, status: 'already_processed' });
     }
 
     // Update transaction record
@@ -302,11 +313,17 @@ router.get('/chapa/callback', async (req: any, res: Response) => {
 
     // Redirect to frontend with status
     const status = chapaService.isPaymentSuccessful(verificationResponse) ? 'success' : 'failed';
-    const frontendUrl = config.corsOrigin === '*' ? 'http://localhost:3000' : config.corsOrigin;
+    const frontendUrl = process.env.FRONTEND_URL || config.corsOrigin;
+    if (frontendUrl === '*' || !frontendUrl) {
+      return res.status(500).json({ error: 'FRONTEND_URL environment variable must be set' });
+    }
     res.redirect(`${frontendUrl}/payment/${status}?tx_ref=${tx_ref}`);
   } catch (error: any) {
     console.error('Error processing Chapa callback:', error);
-    const frontendUrl = config.corsOrigin === '*' ? 'http://localhost:3000' : config.corsOrigin;
+    const frontendUrl = process.env.FRONTEND_URL || config.corsOrigin;
+    if (frontendUrl === '*' || !frontendUrl) {
+      return res.status(500).json({ error: 'FRONTEND_URL environment variable must be set' });
+    }
     res.redirect(`${frontendUrl}/payment/error`);
   }
 });
@@ -329,7 +346,10 @@ router.get('/chapa/return', async (req: any, res: Response) => {
     res.redirect(`${frontendUrl}/payment/return?tx_ref=${tx_ref}`);
   } catch (error: any) {
     console.error('Error processing Chapa return:', error);
-    const frontendUrl = config.corsOrigin === '*' ? 'http://localhost:3000' : config.corsOrigin;
+    const frontendUrl = process.env.FRONTEND_URL || config.corsOrigin;
+    if (frontendUrl === '*' || !frontendUrl) {
+      return res.status(500).json({ error: 'FRONTEND_URL environment variable must be set' });
+    }
     res.redirect(`${frontendUrl}/payment/error`);
   }
 });

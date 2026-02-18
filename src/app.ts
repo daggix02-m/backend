@@ -14,8 +14,10 @@ import refundRoutes from './routes/refunds';
 import shiftRoutes from './routes/shifts';
 import paymentRoutes from './routes/payments';
 import { authenticate } from './middleware/auth';
+import { authRateLimiter } from './middleware/rateLimit';
 import { config } from './config';
 import { swaggerSpec } from './config/swagger';
+import prisma from './lib/prisma';
 
 dotenv.config();
 
@@ -38,8 +40,24 @@ if (config.nodeEnv === 'development') {
 }
 
 // Health check
-app.get('/health', (req: Request, res: Response) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+app.get('/health', async (req: Request, res: Response) => {
+  try {
+    // Check database connection
+    await prisma.$queryRaw`SELECT 1`;
+    
+    res.json({ 
+      status: 'ok', 
+      timestamp: new Date().toISOString(),
+      database: 'connected'
+    });
+  } catch (error) {
+    res.status(503).json({ 
+      status: 'error', 
+      timestamp: new Date().toISOString(),
+      database: 'disconnected',
+      error: 'Database connection failed'
+    });
+  }
 });
 
 // Swagger API Documentation
@@ -69,6 +87,10 @@ app.use('/api/sales', salesRoutes);
 app.use('/api/refunds', refundRoutes);
 app.use('/api/shifts', shiftRoutes);
 app.use('/api/payments', paymentRoutes);
+
+// Apply rate limiting to sensitive endpoints
+app.use('/api/auth/login', authRateLimiter);
+app.use('/api/auth/register', authRateLimiter);
 
 // Protected route example
 app.get('/api/protected', authenticate, (req: Request, res: Response) => {

@@ -7,7 +7,12 @@ export const config = {
   databaseUrl: process.env.DATABASE_URL || '',
 
   // JWT
-  jwtSecret: process.env.JWT_SECRET || 'your_super_secret_jwt_key_change_this_in_production',
+  jwtSecret: process.env.JWT_SECRET || (() => {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('JWT_SECRET environment variable must be set in production');
+    }
+    return 'dev-secret-key-only-for-development';
+  })(),
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
 
   // Server
@@ -20,6 +25,9 @@ export const config = {
 
   // CORS
   corsOrigin: process.env.CORS_ORIGIN || '*',
+
+  // Frontend URL for redirects
+  frontendUrl: process.env.FRONTEND_URL || '',
 
   // Logging
   logLevel: process.env.LOG_LEVEL || 'info',

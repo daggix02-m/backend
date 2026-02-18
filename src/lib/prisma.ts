@@ -4,6 +4,13 @@ const prisma = new PrismaClient({
   log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
 });
 
+// Optimize for serverless - connect on first use in production
+if (process.env.NODE_ENV === 'production') {
+  prisma.$connect().catch((error) => {
+    console.error('Failed to connect to database:', error);
+  });
+}
+
 export default prisma;
 
 // Handle graceful shutdown
