@@ -1,9 +1,10 @@
 import { Router, Request, Response } from 'express';
-import { prisma } from '../lib/prisma';
+import { supabase as supabaseClient } from '../lib/prisma';
 import { AuthUtils } from '../lib/auth';
 import { AuthRequest } from '../middleware/auth';
 
 const router = Router();
+const supabase = supabaseClient as any;
 
 /**
  * @route   POST /api/auth/register
@@ -21,7 +22,7 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
     }
 
     // Check if user already exists
-    const { data: existingUser } = await prisma
+    const { data: existingUser } = await supabase
       .from('users')
       .select('id')
       .eq('email', email)
@@ -33,7 +34,7 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
     }
 
     // Check if pharmacy exists
-    const { data: pharmacy } = await prisma
+    const { data: pharmacy } = await supabase
       .from('pharmacies')
       .select('id')
       .eq('id', pharmacyId)
@@ -48,7 +49,7 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
     const passwordHash = await AuthUtils.hashPassword(password);
 
     // Create user
-    const { data: user, error: userError } = await prisma
+    const { data: user, error: userError } = await supabase
       .from('users')
       .insert({
         email,
@@ -70,14 +71,14 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
 
     // Assign roles
     for (const roleName of roles) {
-      const { data: role } = await prisma
+      const { data: role } = await supabase
         .from('roles')
         .select('id')
         .eq('name', roleName)
         .single();
 
       if (role) {
-        await prisma.from('user_roles').insert({
+        await supabase.from('user_roles').insert({
           user_id: user.id,
           role_id: role.id,
         });
@@ -127,7 +128,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
     }
 
     // Find user
-    const { data: user } = await prisma
+    const { data: user } = await supabase
       .from('users')
       .select(`
         id,
@@ -216,7 +217,7 @@ router.post('/change-password', async (req: AuthRequest, res: Response): Promise
     }
 
     // Find user
-    const { data: user } = await prisma
+    const { data: user } = await supabase
       .from('users')
       .select('id, password_hash')
       .eq('id', req.user.userId)
@@ -239,7 +240,7 @@ router.post('/change-password', async (req: AuthRequest, res: Response): Promise
     const newPasswordHash = await AuthUtils.hashPassword(newPassword);
 
     // Update password
-    const { error: updateError } = await prisma
+    const { error: updateError } = await supabase
       .from('users')
       .update({
         password_hash: newPasswordHash,
@@ -272,7 +273,7 @@ router.get('/me', async (req: AuthRequest, res: Response): Promise<void> => {
       return;
     }
 
-    const { data: user } = await prisma
+    const { data: user } = await supabase
       .from('users')
       .select(`
         id,
