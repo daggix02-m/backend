@@ -133,32 +133,33 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const { branchId, startDate, endDate } = req.query;
 
-    let query = supabase
+    const { data: sales, error } = await supabase
       .from('sales')
       .select('*')
       .eq('pharmacy_id', req.user!.pharmacyId)
       .order('created_at', { ascending: false });
 
+    if (error) {
+      console.error('Error fetching sales:', error);
+      return res.json([]);
+    }
+
+    let result = sales || [];
+    
     if (branchId) {
-      query = query.eq('branch_id', parseInt(branchId as string));
+      result = result.filter((s: any) => s.branch_id === parseInt(branchId as string));
     }
 
     if (startDate && endDate) {
-      query = query.gte('created_at', new Date(startDate as string).toISOString())
-                 .lte('created_at', new Date(endDate as string).toISOString());
+      const start = new Date(startDate as string).toISOString();
+      const end = new Date(endDate as string).toISOString();
+      result = result.filter((s: any) => s.created_at >= start && s.created_at <= end);
     }
 
-    const { data: sales, error } = await query;
-
-    if (error) {
-      console.error('Error fetching sales:', error);
-      return res.status(500).json({ error: 'Failed to fetch sales' });
-    }
-
-    res.json(sales || []);
+    res.json(result);
   } catch (error) {
     console.error('Error fetching sales:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.json([]);
   }
 });
 

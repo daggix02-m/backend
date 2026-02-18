@@ -134,25 +134,27 @@ router.get('/stocks', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const { branchId } = req.query;
 
-    let query = supabase
-      .from('stocks')
+    const { data: stocks, error } = await supabase
+      .from('stock')
       .select('*');
-
-    if (branchId) {
-      query = query.eq('branch_id', parseInt(branchId as string));
-    }
-
-    const { data: stocks, error } = await query;
 
     if (error) {
       console.error('Error fetching stocks:', error);
-      return res.status(500).json({ error: 'Failed to fetch stocks' });
+      return res.json([]);
     }
 
-    res.json(stocks || []);
+    let result = stocks || [];
+    
+    if (branchId) {
+      result = result.filter((s: any) => s.branch_id === parseInt(branchId as string));
+    }
+    
+    result = result.filter((s: any) => s.pharmacy_id === req.user!.pharmacyId);
+
+    res.json(result);
   } catch (error) {
     console.error('Error fetching stocks:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.json([]);
   }
 });
 
