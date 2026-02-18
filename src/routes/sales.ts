@@ -135,10 +135,7 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
 
     let query = supabase
       .from('sales')
-      .select(`
-        *,
-        branch:branches (name)
-      `)
+      .select('*')
       .eq('pharmacy_id', req.user!.pharmacyId)
       .order('created_at', { ascending: false });
 
