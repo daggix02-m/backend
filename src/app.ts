@@ -17,7 +17,7 @@ import { authenticate } from './middleware/auth';
 import { authRateLimiter } from './middleware/rateLimit';
 import { config } from './config';
 import { swaggerSpec } from './config/swagger';
-import { prisma } from './lib/prisma';
+import { prisma, supabase } from './lib/prisma';
 
 dotenv.config();
 
@@ -42,7 +42,7 @@ if (config.nodeEnv === 'development') {
 // Health check
 app.get('/health', async (req: Request, res: Response) => {
   try {
-    const { error } = await (prisma as any).from('users').select('id').limit(1);
+    const { error } = await supabase.from('users').select('id').limit(1);
     
     if (error) throw error;
     
