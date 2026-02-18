@@ -19,7 +19,7 @@ router.post('/', authenticate, authorize('admin', 'manager', 'pharmacist'), asyn
 
     const sale = await prisma.sale.findUnique({
       where: { id: saleId },
-      include: { saleItems: true }
+      include: { items: true }
     });
 
     if (!sale || sale.pharmacyId !== req.user!.pharmacyId) {

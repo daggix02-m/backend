@@ -26,10 +26,16 @@ router.get('/categories', authenticate, async (req: AuthRequest, res: Response) 
  */
 router.get('/medicines', authenticate, async (req: AuthRequest, res: Response) => {
   try {
+    // Get medicines from user's pharmacy branches
     const medicines = await prisma.medicine.findMany({
-      where: { pharmacyId: req.user!.pharmacyId },
+      where: {
+        branch: {
+          pharmacyId: req.user!.pharmacyId
+        }
+      },
       include: {
         category: true,
+        branch: true,
       },
     });
     res.json(medicines);
@@ -46,14 +52,24 @@ router.get('/medicines', authenticate, async (req: AuthRequest, res: Response) =
  */
 router.post('/medicines', authenticate, authorize('admin', 'manager', 'pharmacist'), async (req: AuthRequest, res: Response) => {
   try {
-    const { 
-      name, genericName, brandName, categoryId, 
-      sku, unitType, strength, manufacturer, 
-      description, minStockLevel, requiresPrescription 
+    const {
+      name, genericName, brandName, categoryId,
+      sku, unitType, strength, manufacturer,
+      description, minStockLevel, requiresPrescription, branchId,
+      unitPrice
     } = req.body;
 
-    if (!name || !categoryId || !unitType) {
+    if (!name || !categoryId || !unitType || !branchId) {
       return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    // Verify branch belongs to user's pharmacy
+    const branch = await prisma.branch.findUnique({
+      where: { id: branchId }
+    });
+
+    if (!branch || branch.pharmacyId !== req.user!.pharmacyId) {
+      return res.status(403).json({ error: 'Access denied' });
     }
 
     const medicine = await prisma.medicine.create({
@@ -61,7 +77,9 @@ router.post('/medicines', authenticate, authorize('admin', 'manager', 'pharmacis
         name,
         genericName,
         brandName,
-        categoryId,
+        category: {
+          connect: { id: categoryId }
+        },
         sku,
         unitType,
         strength,
@@ -69,7 +87,10 @@ router.post('/medicines', authenticate, authorize('admin', 'manager', 'pharmacis
         description,
         minStockLevel: minStockLevel || 10,
         requiresPrescription: requiresPrescription || false,
-        pharmacyId: req.user!.pharmacyId,
+        unitPrice: unitPrice || 0,
+        branch: {
+          connect: { id: branchId }
+        }
       },
     });
 
@@ -88,14 +109,22 @@ router.post('/medicines', authenticate, authorize('admin', 'manager', 'pharmacis
 router.get('/stocks', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const { branchId } = req.query;
-    
+
     const stocks = await prisma.stock.findMany({
       where: {
-        medicine: { pharmacyId: req.user!.pharmacyId },
+        medicine: {
+          branch: {
+            pharmacyId: req.user!.pharmacyId
+          }
+        },
         ...(branchId && { branchId: parseInt(branchId as string) }),
       },
       include: {
-        medicine: true,
+        medicine: {
+          include: {
+            branch: true,
+          }
+        },
         branch: true,
       },
     });
@@ -124,14 +153,12 @@ router.post('/batches', authenticate, authorize('admin', 'manager', 'pharmacist'
     }
 
     // Create batch
-    const batch = await prisma.batch.create({
+    const batch = await prisma.medicineBatch.create({
       data: {
         medicineId,
-        branchId,
         batchNumber,
         expiryDate: new Date(expiryDate),
-        quantityReceived,
-        quantityRemaining: quantityReceived,
+        quantity: quantityReceived,
         costPrice,
         sellingPrice,
       },

@@ -86,7 +86,7 @@ router.post('/end', authenticate, async (req: AuthRequest, res: Response) => {
     });
 
     const totalSales = sales._sum.finalAmount || 0;
-    const expectedBalance = activeShift.openingBalance + totalSales;
+    const expectedBalance = Number(activeShift.openingBalance || 0) + Number(totalSales);
 
     const shift = await prisma.cashierShift.update({
       where: { id: activeShift.id },
@@ -102,7 +102,7 @@ router.post('/end', authenticate, async (req: AuthRequest, res: Response) => {
     res.json({
       shift,
       summary: {
-        openingBalance: activeShift.openingBalance,
+        openingBalance: activeShift.openingBalance || 0,
         totalSales,
         expectedBalance,
         closingBalance,

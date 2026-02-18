@@ -118,9 +118,22 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
         }),
       },
       include: {
-        saleItems: { include: { medicine: true } },
-        paymentMethod: true,
-        user: { select: { fullName: true } },
+        items: {
+          include: {
+            batch: {
+              include: {
+                medicine: true
+              }
+            }
+          }
+        },
+        payments: {
+          include: {
+            paymentMethod: true
+          }
+        },
+        pharmacist: { select: { fullName: true } },
+        cashier: { select: { fullName: true } },
         branch: { select: { name: true } },
       },
       orderBy: { createdAt: 'desc' },
