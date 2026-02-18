@@ -17,7 +17,7 @@ import { authenticate } from './middleware/auth';
 import { authRateLimiter } from './middleware/rateLimit';
 import { config } from './config';
 import { swaggerSpec } from './config/swagger';
-import prisma from './lib/prisma';
+import { prisma } from './lib/prisma';
 
 dotenv.config();
 
@@ -43,7 +43,9 @@ if (config.nodeEnv === 'development') {
 app.get('/health', async (req: Request, res: Response) => {
   try {
     // Check database connection
-    await prisma.$queryRaw`SELECT 1`;
+    const { error } = await prisma.from('users').select('count', { count: 'exact', head: true });
+    
+    if (error) throw error;
     
     res.json({ 
       status: 'ok', 

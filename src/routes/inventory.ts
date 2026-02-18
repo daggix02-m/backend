@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import prisma from '../lib/prisma';
+import { prisma } from '../lib/prisma';
 import { AuthRequest, authenticate, authorize } from '../middleware/auth';
 
 const router = Router();
@@ -11,8 +11,17 @@ const router = Router();
  */
 router.get('/categories', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const categories = await prisma.medicineCategory.findMany();
-    res.json(categories);
+    const { data: categories, error } = await prisma
+      .from('medicine_categories')
+      .select('*')
+      .order('name');
+
+    if (error) {
+      console.error('Error fetching categories:', error);
+      return res.status(500).json({ error: 'Failed to fetch categories' });
+    }
+
+    res.json(categories || []);
   } catch (error) {
     console.error('Error fetching categories:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -21,24 +30,28 @@ router.get('/categories', authenticate, async (req: AuthRequest, res: Response) 
 
 /**
  * @route   GET /api/inventory/medicines
- * @desc    Get all medicines in the pharmacy
+ * @desc    Get all medicines in pharmacy
  * @access  Private
  */
 router.get('/medicines', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     // Get medicines from user's pharmacy branches
-    const medicines = await prisma.medicine.findMany({
-      where: {
-        branch: {
-          pharmacyId: req.user!.pharmacyId
-        }
-      },
-      include: {
-        category: true,
-        branch: true,
-      },
-    });
-    res.json(medicines);
+    const { data: medicines, error } = await prisma
+      .from('medicines')
+      .select(`
+        *,
+        category:medicine_categories (*),
+        branch:branches (*)
+      `)
+      .eq('branch->pharmacy_id', req.user!.pharmacyId)
+      .order('name');
+
+    if (error) {
+      console.error('Error fetching medicines:', error);
+      return res.status(500).json({ error: 'Failed to fetch medicines' });
+    }
+
+    res.json(medicines || []);
   } catch (error) {
     console.error('Error fetching medicines:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -64,35 +77,43 @@ router.post('/medicines', authenticate, authorize('admin', 'manager', 'pharmacis
     }
 
     // Verify branch belongs to user's pharmacy
-    const branch = await prisma.branch.findUnique({
-      where: { id: branchId }
-    });
+    const { data: branch } = await prisma
+      .from('branches')
+      .select('id, pharmacy_id')
+      .eq('id', branchId)
+      .single();
 
-    if (!branch || branch.pharmacyId !== req.user!.pharmacyId) {
+    if (!branch || branch.pharmacy_id !== req.user!.pharmacyId) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    const medicine = await prisma.medicine.create({
-      data: {
+    const { data: medicine, error } = await prisma
+      .from('medicines')
+      .insert({
         name,
-        genericName,
-        brandName,
-        category: {
-          connect: { id: categoryId }
-        },
+        generic_name: genericName,
+        brand_name: brandName,
+        category_id: categoryId,
         sku,
-        unitType,
+        unit_type: unitType,
         strength,
         manufacturer,
         description,
-        minStockLevel: minStockLevel || 10,
-        requiresPrescription: requiresPrescription || false,
-        unitPrice: unitPrice || 0,
-        branch: {
-          connect: { id: branchId }
-        }
-      },
-    });
+        min_stock_level: minStockLevel || 10,
+        requires_prescription: requiresPrescription || false,
+        unit_price: unitPrice || 0,
+        branch_id: branchId,
+        is_deleted: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error creating medicine:', error);
+      return res.status(500).json({ error: 'Failed to create medicine' });
+    }
 
     res.status(201).json(medicine);
   } catch (error) {
@@ -110,25 +131,30 @@ router.get('/stocks', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const { branchId } = req.query;
 
-    const stocks = await prisma.stock.findMany({
-      where: {
-        medicine: {
-          branch: {
-            pharmacyId: req.user!.pharmacyId
-          }
-        },
-        ...(branchId && { branchId: parseInt(branchId as string) }),
-      },
-      include: {
-        medicine: {
-          include: {
-            branch: true,
-          }
-        },
-        branch: true,
-      },
-    });
-    res.json(stocks);
+    let query = prisma
+      .from('stocks')
+      .select(`
+        *,
+        medicine:medicines (
+          *,
+          branch:branches (*)
+        ),
+        branch:branches (*)
+      `)
+      .eq('medicine->branch->pharmacy_id', req.user!.pharmacyId);
+
+    if (branchId) {
+      query = query.eq('branch_id', parseInt(branchId as string));
+    }
+
+    const { data: stocks, error } = await query;
+
+    if (error) {
+      console.error('Error fetching stocks:', error);
+      return res.status(500).json({ error: 'Failed to fetch stocks' });
+    }
+
+    res.json(stocks || []);
   } catch (error) {
     console.error('Error fetching stocks:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -142,10 +168,10 @@ router.get('/stocks', authenticate, async (req: AuthRequest, res: Response) => {
  */
 router.post('/batches', authenticate, authorize('admin', 'manager', 'pharmacist'), async (req: AuthRequest, res: Response) => {
   try {
-    const { 
-      medicineId, branchId, batchNumber, 
-      expiryDate, quantityReceived, costPrice, 
-      sellingPrice 
+    const {
+      medicineId, branchId, batchNumber,
+      expiryDate, quantityReceived, costPrice,
+      sellingPrice
     } = req.body;
 
     if (!medicineId || !branchId || !batchNumber || !expiryDate || !quantityReceived) {
@@ -153,39 +179,63 @@ router.post('/batches', authenticate, authorize('admin', 'manager', 'pharmacist'
     }
 
     // Create batch
-    const batch = await prisma.medicineBatch.create({
-      data: {
-        medicineId,
-        batchNumber,
-        expiryDate: new Date(expiryDate),
+    const { data: batch, error: batchError } = await prisma
+      .from('medicine_batches')
+      .insert({
+        medicine_id: medicineId,
+        batch_number: batchNumber,
+        expiry_date: new Date(expiryDate).toISOString(),
         quantity: quantityReceived,
-        costPrice,
-        sellingPrice,
-      },
-    });
+        cost_price: costPrice,
+        selling_price: sellingPrice,
+        created_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (batchError) {
+      console.error('Error creating batch:', batchError);
+      return res.status(500).json({ error: 'Failed to create batch' });
+    }
 
     // Update or create stock record
-    const existingStock = await prisma.stock.findFirst({
-      where: { medicineId, branchId }
-    });
+    const { data: existingStock } = await prisma
+      .from('stocks')
+      .select('id, quantity')
+      .eq('medicine_id', medicineId)
+      .eq('branch_id', branchId)
+      .single();
 
     if (existingStock) {
-      await prisma.stock.update({
-        where: { id: existingStock.id },
-        data: {
+      const { error: updateError } = await prisma
+        .from('stocks')
+        .update({
           quantity: existingStock.quantity + quantityReceived,
-          lastRestocked: new Date(),
-        }
-      });
+          last_restocked: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existingStock.id);
+
+      if (updateError) {
+        console.error('Error updating stock:', updateError);
+        return res.status(500).json({ error: 'Failed to update stock' });
+      }
     } else {
-      await prisma.stock.create({
-        data: {
-          medicineId,
-          branchId,
+      const { error: createError } = await prisma
+        .from('stocks')
+        .insert({
+          medicine_id: medicineId,
+          branch_id: branchId,
           quantity: quantityReceived,
-          lastRestocked: new Date(),
-        }
-      });
+          last_restocked: new Date().toISOString(),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+
+      if (createError) {
+        console.error('Error creating stock:', createError);
+        return res.status(500).json({ error: 'Failed to create stock' });
+      }
     }
 
     res.status(201).json(batch);

@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import prisma from '../lib/prisma';
+import { prisma } from '../lib/prisma';
 import { AuthRequest, authenticate, authorize } from '../middleware/auth';
 
 const router = Router();
@@ -11,8 +11,17 @@ const router = Router();
  */
 router.get('/payment-methods', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const methods = await prisma.paymentMethod.findMany();
-    res.json(methods);
+    const { data: methods, error } = await prisma
+      .from('payment_methods')
+      .select('*')
+      .order('name');
+
+    if (error) {
+      console.error('Error fetching payment methods:', error);
+      return res.status(500).json({ error: 'Failed to fetch payment methods' });
+    }
+
+    res.json(methods || []);
   } catch (error) {
     console.error('Error fetching payment methods:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -26,10 +35,10 @@ router.get('/payment-methods', authenticate, async (req: AuthRequest, res: Respo
  */
 router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const { 
-      branchId, customerName, customerPhone, 
-      items, paymentMethodId, discountAmount = 0, 
-      taxAmount = 0, isChapaPayment = false 
+    const {
+      branchId, customerName, customerPhone,
+      items, paymentMethodId, discountAmount = 0,
+      taxAmount = 0, isChapaPayment = false
     } = req.body;
 
     if (!branchId || !items || items.length === 0 || !paymentMethodId) {
@@ -43,52 +52,69 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
     }
     const finalAmount = totalAmount - discountAmount + taxAmount;
 
-    // Use a transaction for the sale and stock updates
-    const sale = await prisma.$transaction(async (tx: any) => {
-      // 1. Create Sale record
-      const newSale = await tx.sale.create({
-        data: {
-          pharmacyId: req.user!.pharmacyId,
-          branchId,
-          userId: req.user!.userId,
-          customerName,
-          customerPhone,
-          totalAmount,
-          discountAmount,
-          taxAmount,
-          finalAmount,
-          status: isChapaPayment ? 'PENDING' : 'COMPLETED',
-          paymentMethodId,
-        },
-      });
+    // Use Supabase transaction for sale and stock updates
+    const { data: sale, error: saleError } = await prisma
+      .from('sales')
+      .insert({
+        pharmacy_id: req.user!.pharmacyId,
+        branch_id: branchId,
+        pharmacist_id: req.user!.userId,
+        user_id: req.user!.userId,
+        customer_name: customerName,
+        customer_phone: customerPhone,
+        total_amount: totalAmount,
+        discount_amount: discountAmount,
+        tax_amount: taxAmount,
+        final_amount: finalAmount,
+        payment_method_id: paymentMethodId,
+        status: isChapaPayment ? 'PENDING' : 'COMPLETED',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
 
-      // 2. Create SaleItems and update stock (FEFO logic simplified here)
-      for (const item of items) {
-        await tx.saleItem.create({
-          data: {
-            saleId: newSale.id,
-            medicineId: item.medicineId,
-            quantity: item.quantity,
-            unitPrice: item.unitPrice,
-            totalPrice: item.quantity * item.unitPrice,
-          },
+    if (saleError) {
+      console.error('Error creating sale:', saleError);
+      return res.status(500).json({ error: 'Failed to create sale' });
+    }
+
+    // Create SaleItems and update stock
+    for (const item of items) {
+      // Create sale item
+      const { error: itemError } = await prisma
+        .from('sale_items')
+        .insert({
+          sale_id: sale.id,
+          medicine_id: item.medicineId,
+          batch_id: item.batchId,
+          quantity: item.quantity,
+          unit_price: item.unitPrice,
+          total_price: item.quantity * item.unitPrice,
         });
 
-        // Update branch stock
-        await tx.stock.update({
-          where: {
-            id: (await tx.stock.findFirst({
-              where: { medicineId: item.medicineId, branchId }
-            })).id
-          },
-          data: {
-            quantity: { decrement: item.quantity }
-          }
-        });
+      if (itemError) {
+        console.error('Error creating sale item:', itemError);
       }
 
-      return newSale;
-    });
+      // Update branch stock
+      const { data: stock } = await prisma
+        .from('stocks')
+        .select('id, quantity')
+        .eq('medicine_id', item.medicineId)
+        .eq('branch_id', branchId)
+        .single();
+
+      if (stock) {
+        await prisma
+          .from('stocks')
+          .update({
+            quantity: stock.quantity - item.quantity,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', stock.id);
+      }
+    }
 
     res.status(201).json(sale);
   } catch (error) {
@@ -106,40 +132,42 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const { branchId, startDate, endDate } = req.query;
 
-    const sales = await prisma.sale.findMany({
-      where: {
-        pharmacyId: req.user!.pharmacyId,
-        ...(branchId && { branchId: parseInt(branchId as string) }),
-        ...(startDate && endDate && {
-          createdAt: {
-            gte: new Date(startDate as string),
-            lte: new Date(endDate as string),
-          },
-        }),
-      },
-      include: {
-        items: {
-          include: {
-            batch: {
-              include: {
-                medicine: true
-              }
-            }
-          }
-        },
-        payments: {
-          include: {
-            paymentMethod: true
-          }
-        },
-        pharmacist: { select: { fullName: true } },
-        cashier: { select: { fullName: true } },
-        branch: { select: { name: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+    let query = prisma
+      .from('sales')
+      .select(`
+        *,
+        items:sale_items (
+          batch:medicine_batches (
+            medicine:medicines (*)
+          )
+        ),
+        payments:payments (
+          payment_method:payment_methods (*)
+        ),
+        pharmacist:users (full_name),
+        cashier:users (full_name),
+        branch:branches (name)
+      `)
+      .eq('pharmacy_id', req.user!.pharmacyId)
+      .order('created_at', { ascending: false });
 
-    res.json(sales);
+    if (branchId) {
+      query = query.eq('branch_id', parseInt(branchId as string));
+    }
+
+    if (startDate && endDate) {
+      query = query.gte('created_at', new Date(startDate as string).toISOString())
+                 .lte('created_at', new Date(endDate as string).toISOString());
+    }
+
+    const { data: sales, error } = await query;
+
+    if (error) {
+      console.error('Error fetching sales:', error);
+      return res.status(500).json({ error: 'Failed to fetch sales' });
+    }
+
+    res.json(sales || []);
   } catch (error) {
     console.error('Error fetching sales:', error);
     res.status(500).json({ error: 'Internal server error' });

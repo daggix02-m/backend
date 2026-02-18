@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import prisma from '../lib/prisma';
+import { prisma } from '../lib/prisma';
 import { AuthUtils } from '../lib/auth';
 import { AuthRequest } from '../middleware/auth';
 
@@ -21,9 +21,11 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
     }
 
     // Check if user already exists
-    const existingUser = await prisma.user.findUnique({
-      where: { email },
-    });
+    const { data: existingUser } = await prisma
+      .from('users')
+      .select('id')
+      .eq('email', email)
+      .single();
 
     if (existingUser) {
       res.status(400).json({ error: 'User already exists' });
@@ -31,9 +33,11 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
     }
 
     // Check if pharmacy exists
-    const pharmacy = await prisma.pharmacy.findUnique({
-      where: { id: pharmacyId },
-    });
+    const { data: pharmacy } = await prisma
+      .from('pharmacies')
+      .select('id')
+      .eq('id', pharmacyId)
+      .single();
 
     if (!pharmacy) {
       res.status(404).json({ error: 'Pharmacy not found' });
@@ -44,29 +48,38 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
     const passwordHash = await AuthUtils.hashPassword(password);
 
     // Create user
-    const user = await prisma.user.create({
-      data: {
+    const { data: user, error: userError } = await prisma
+      .from('users')
+      .insert({
         email,
-        passwordHash,
-        fullName,
-        pharmacyId,
-        isActive: true,
-        mustChangePassword: false,
-      },
-    });
+        password_hash: passwordHash,
+        full_name: fullName,
+        pharmacy_id: pharmacyId,
+        is_active: true,
+        must_change_password: false,
+        created_at: new Date().toISOString(),
+      })
+      .select('id, email, full_name, pharmacy_id')
+      .single();
+
+    if (userError) {
+      console.error('User creation error:', userError);
+      res.status(500).json({ error: 'Failed to create user' });
+      return;
+    }
 
     // Assign roles
     for (const roleName of roles) {
-      const role = await prisma.role.findUnique({
-        where: { name: roleName },
-      });
+      const { data: role } = await prisma
+        .from('roles')
+        .select('id')
+        .eq('name', roleName)
+        .single();
 
       if (role) {
-        await prisma.userRole.create({
-          data: {
-            userId: user.id,
-            roleId: role.id,
-          },
+        await prisma.from('user_roles').insert({
+          user_id: user.id,
+          role_id: role.id,
         });
       }
     }
@@ -74,7 +87,7 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
     // Generate token
     const tokenPayload = {
       userId: user.id,
-      pharmacyId: user.pharmacyId,
+      pharmacyId: user.pharmacy_id,
       email: user.email,
       roles,
     };
@@ -87,8 +100,8 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
       user: {
         id: user.id,
         email: user.email,
-        fullName: user.fullName,
-        pharmacyId: user.pharmacyId,
+        fullName: user.full_name,
+        pharmacyId: user.pharmacy_id,
         roles,
       },
     });
@@ -114,16 +127,24 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
     }
 
     // Find user
-    const user = await prisma.user.findUnique({
-      where: { email },
-      include: {
-        userRoles: {
-          include: {
-            role: true,
-          },
-        },
-      },
-    });
+    const { data: user } = await prisma
+      .from('users')
+      .select(`
+        id,
+        email,
+        full_name,
+        password_hash,
+        pharmacy_id,
+        is_active,
+        must_change_password,
+        user_roles (
+          role:roles (
+            name
+          )
+        )
+      `)
+      .eq('email', email)
+      .single();
 
     if (!user) {
       res.status(401).json({ error: 'Invalid credentials' });
@@ -131,13 +152,13 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
     }
 
     // Check if user is active
-    if (!user.isActive) {
+    if (!user.is_active) {
       res.status(401).json({ error: 'Account is inactive' });
       return;
     }
 
     // Verify password
-    const isValidPassword = await AuthUtils.comparePassword(password, user.passwordHash);
+    const isValidPassword = await AuthUtils.comparePassword(password, user.password_hash);
 
     if (!isValidPassword) {
       res.status(401).json({ error: 'Invalid credentials' });
@@ -145,12 +166,12 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
     }
 
     // Get roles
-    const roles = user.userRoles.map((ur: any) => ur.role.name);
+    const roles = user.user_roles?.map((ur: any) => ur.role?.name) || [];
 
     // Generate token
     const tokenPayload = {
       userId: user.id,
-      pharmacyId: user.pharmacyId,
+      pharmacyId: user.pharmacy_id,
       email: user.email,
       roles,
     };
@@ -163,10 +184,10 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       user: {
         id: user.id,
         email: user.email,
-        fullName: user.fullName,
-        pharmacyId: user.pharmacyId,
+        fullName: user.full_name,
+        pharmacyId: user.pharmacy_id,
         roles,
-        mustChangePassword: user.mustChangePassword,
+        mustChangePassword: user.must_change_password,
       },
     });
   } catch (error) {
@@ -195,9 +216,11 @@ router.post('/change-password', async (req: AuthRequest, res: Response): Promise
     }
 
     // Find user
-    const user = await prisma.user.findUnique({
-      where: { id: req.user.userId },
-    });
+    const { data: user } = await prisma
+      .from('users')
+      .select('id, password_hash')
+      .eq('id', req.user.userId)
+      .single();
 
     if (!user) {
       res.status(404).json({ error: 'User not found' });
@@ -205,7 +228,7 @@ router.post('/change-password', async (req: AuthRequest, res: Response): Promise
     }
 
     // Verify current password
-    const isValidPassword = await AuthUtils.comparePassword(currentPassword, user.passwordHash);
+    const isValidPassword = await AuthUtils.comparePassword(currentPassword, user.password_hash);
 
     if (!isValidPassword) {
       res.status(401).json({ error: 'Current password is incorrect' });
@@ -216,13 +239,19 @@ router.post('/change-password', async (req: AuthRequest, res: Response): Promise
     const newPasswordHash = await AuthUtils.hashPassword(newPassword);
 
     // Update password
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        passwordHash: newPasswordHash,
-        mustChangePassword: false,
-      },
-    });
+    const { error: updateError } = await prisma
+      .from('users')
+      .update({
+        password_hash: newPasswordHash,
+        must_change_password: false,
+      })
+      .eq('id', user.id);
+
+    if (updateError) {
+      console.error('Password update error:', updateError);
+      res.status(500).json({ error: 'Failed to update password' });
+      return;
+    }
 
     res.json({ message: 'Password changed successfully' });
   } catch (error) {
@@ -243,43 +272,52 @@ router.get('/me', async (req: AuthRequest, res: Response): Promise<void> => {
       return;
     }
 
-    const user = await prisma.user.findUnique({
-      where: { id: req.user.userId },
-      include: {
-        userRoles: {
-          include: {
-            role: true,
-          },
-        },
-        userBranches: {
-          include: {
-            branch: true,
-          },
-        },
-      },
-    });
+    const { data: user } = await prisma
+      .from('users')
+      .select(`
+        id,
+        email,
+        full_name,
+        pharmacy_id,
+        is_active,
+        must_change_password,
+        user_roles (
+          role:roles (
+            name
+          )
+        ),
+        user_branches (
+          branch:branches (
+            id,
+            name,
+            location
+          )
+        )
+      `)
+      .eq('id', req.user.userId)
+      .single();
 
     if (!user) {
       res.status(404).json({ error: 'User not found' });
       return;
     }
 
-    const roles = user.userRoles.map((ur: any) => ur.role.name);
-    const branches = user.userBranches.map((ub: any) => ({
-      id: ub.branch.id,
-      name: ub.branch.name,
-      location: ub.branch.location,
-    }));
+    const roles = user.user_roles?.map((ur: any) => ur.role?.name) || [];
+    const branches = user.user_branches?.map((ub: any) => ({
+      id: ub.branch?.id,
+      name: ub.branch?.name,
+      location: ub.branch?.location,
+    })) || [];
 
     res.json({
       id: user.id,
       email: user.email,
-      fullName: user.fullName,
-      pharmacyId: user.pharmacyId,
+      fullName: user.full_name,
+      pharmacyId: user.pharmacy_id,
       roles,
       branches,
-      isActive: user.isActive,
-      mustChangePassword: user.mustChangePassword,
+      isActive: user.is_active,
+      mustChangePassword: user.must_change_password,
     });
   } catch (error) {
     console.error('Get user error:', error);

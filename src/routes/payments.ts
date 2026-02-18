@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import prisma from '../lib/prisma';
+import { prisma } from '../lib/prisma';
 import { chapaService, ChapaWebhookPayload } from '../lib/chapa';
 import { AuthRequest, authenticate } from '../middleware/auth';
 import { config } from '../config';
