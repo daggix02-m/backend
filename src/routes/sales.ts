@@ -137,16 +137,6 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
       .from('sales')
       .select(`
         *,
-        items:sale_items (
-          batch:medicine_batches (
-            medicine:medicines (*)
-          )
-        ),
-        payments:payments (
-          payment_method:payment_methods (*)
-        ),
-        pharmacist:users (full_name),
-        cashier:users (full_name),
         branch:branches (name)
       `)
       .eq('pharmacy_id', req.user!.pharmacyId)

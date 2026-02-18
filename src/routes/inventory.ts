@@ -36,15 +36,13 @@ router.get('/categories', authenticate, async (req: AuthRequest, res: Response) 
  */
 router.get('/medicines', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    // Get medicines from user's pharmacy branches
     const { data: medicines, error } = await supabase
       .from('medicines')
       .select(`
         *,
         category:medicine_categories (*),
-        branch:branches (*)
+        branch:branches!medicines_branch_id_fkey (*)
       `)
-      .eq('branch->pharmacy_id', req.user!.pharmacyId)
       .order('name');
 
     if (error) {
@@ -52,7 +50,11 @@ router.get('/medicines', authenticate, async (req: AuthRequest, res: Response) =
       return res.status(500).json({ error: 'Failed to fetch medicines' });
     }
 
-    res.json(medicines || []);
+    const filteredMedicines = (medicines || []).filter((m: any) => 
+      m.branch && m.branch.pharmacy_id === req.user!.pharmacyId
+    );
+
+    res.json(filteredMedicines);
   } catch (error) {
     console.error('Error fetching medicines:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -136,13 +138,9 @@ router.get('/stocks', authenticate, async (req: AuthRequest, res: Response) => {
       .from('stocks')
       .select(`
         *,
-        medicine:medicines (
-          *,
-          branch:branches (*)
-        ),
+        medicine:medicines (*),
         branch:branches (*)
-      `)
-      .eq('medicine->branch->pharmacy_id', req.user!.pharmacyId);
+      `);
 
     if (branchId) {
       query = query.eq('branch_id', parseInt(branchId as string));
@@ -155,7 +153,11 @@ router.get('/stocks', authenticate, async (req: AuthRequest, res: Response) => {
       return res.status(500).json({ error: 'Failed to fetch stocks' });
     }
 
-    res.json(stocks || []);
+    const filteredStocks = (stocks || []).filter((s: any) => 
+      s.branch && s.branch.pharmacy_id === req.user!.pharmacyId
+    );
+
+    res.json(filteredStocks);
   } catch (error) {
     console.error('Error fetching stocks:', error);
     res.status(500).json({ error: 'Internal server error' });
