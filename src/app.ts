@@ -120,6 +120,33 @@ app.get('/api/protected', authenticate, (req: Request, res: Response) => {
   res.json({ message: 'This is a protected route' });
 });
 
+// Root route - API info
+app.get('/', (req: Request, res: Response) => {
+  res.json({
+    name: 'PharmaCare API',
+    version: '1.0.0',
+    description: 'Multi-tenant Pharmacy SaaS Platform Backend',
+    documentation: '/api-docs',
+    health: '/health',
+    endpoints: {
+      auth: '/api/auth',
+      pharmacies: '/api/pharmacies',
+      users: '/api/users',
+      inventory: '/api/inventory',
+      sales: '/api/sales',
+      refunds: '/api/refunds',
+      shifts: '/api/shifts',
+      payments: '/api/payments',
+      admin: '/api/admin',
+      manager: '/api/manager',
+      pharmacist: '/api/pharmacist',
+      cashier: '/api/cashier',
+      import: '/api/import',
+      upload: '/api/upload',
+    },
+  });
+});
+
 // 404 handler
 app.use((req: Request, res: Response) => {
   res.status(404).json({ error: 'Route not found' });
