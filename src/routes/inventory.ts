@@ -1,8 +1,9 @@
 import { Router, Response } from 'express';
-import { prisma } from '../lib/prisma';
+import { supabase as supabaseClient } from '../lib/supabase';
 import { AuthRequest, authenticate, authorize } from '../middleware/auth';
 
 const router = Router();
+const supabase = supabaseClient as any;
 
 /**
  * @route   GET /api/inventory/categories
@@ -11,7 +12,7 @@ const router = Router();
  */
 router.get('/categories', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const { data: categories, error } = await prisma
+    const { data: categories, error } = await supabase
       .from('medicine_categories')
       .select('*')
       .order('name');
@@ -36,7 +37,7 @@ router.get('/categories', authenticate, async (req: AuthRequest, res: Response) 
 router.get('/medicines', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     // Get medicines from user's pharmacy branches
-    const { data: medicines, error } = await prisma
+    const { data: medicines, error } = await supabase
       .from('medicines')
       .select(`
         *,
@@ -77,7 +78,7 @@ router.post('/medicines', authenticate, authorize('admin', 'manager', 'pharmacis
     }
 
     // Verify branch belongs to user's pharmacy
-    const { data: branch } = await prisma
+    const { data: branch } = await supabase
       .from('branches')
       .select('id, pharmacy_id')
       .eq('id', branchId)
@@ -87,7 +88,7 @@ router.post('/medicines', authenticate, authorize('admin', 'manager', 'pharmacis
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    const { data: medicine, error } = await prisma
+    const { data: medicine, error } = await supabase
       .from('medicines')
       .insert({
         name,
@@ -131,7 +132,7 @@ router.get('/stocks', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const { branchId } = req.query;
 
-    let query = prisma
+    let query = supabase
       .from('stocks')
       .select(`
         *,
@@ -179,7 +180,7 @@ router.post('/batches', authenticate, authorize('admin', 'manager', 'pharmacist'
     }
 
     // Create batch
-    const { data: batch, error: batchError } = await prisma
+    const { data: batch, error: batchError } = await supabase
       .from('medicine_batches')
       .insert({
         medicine_id: medicineId,
@@ -199,7 +200,7 @@ router.post('/batches', authenticate, authorize('admin', 'manager', 'pharmacist'
     }
 
     // Update or create stock record
-    const { data: existingStock } = await prisma
+    const { data: existingStock } = await supabase
       .from('stocks')
       .select('id, quantity')
       .eq('medicine_id', medicineId)
@@ -207,7 +208,7 @@ router.post('/batches', authenticate, authorize('admin', 'manager', 'pharmacist'
       .single();
 
     if (existingStock) {
-      const { error: updateError } = await prisma
+      const { error: updateError } = await supabase
         .from('stocks')
         .update({
           quantity: existingStock.quantity + quantityReceived,
@@ -221,7 +222,7 @@ router.post('/batches', authenticate, authorize('admin', 'manager', 'pharmacist'
         return res.status(500).json({ error: 'Failed to update stock' });
       }
     } else {
-      const { error: createError } = await prisma
+      const { error: createError } = await supabase
         .from('stocks')
         .insert({
           medicine_id: medicineId,

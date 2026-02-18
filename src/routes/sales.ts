@@ -1,8 +1,9 @@
 import { Router, Response } from 'express';
-import { prisma } from '../lib/prisma';
+import { supabase as supabaseClient } from '../lib/supabase';
 import { AuthRequest, authenticate, authorize } from '../middleware/auth';
 
 const router = Router();
+const supabase = supabaseClient as any;
 
 /**
  * @route   GET /api/sales/payment-methods
@@ -11,7 +12,7 @@ const router = Router();
  */
 router.get('/payment-methods', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const { data: methods, error } = await prisma
+    const { data: methods, error } = await supabase
       .from('payment_methods')
       .select('*')
       .order('name');
@@ -53,7 +54,7 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
     const finalAmount = totalAmount - discountAmount + taxAmount;
 
     // Use Supabase transaction for sale and stock updates
-    const { data: sale, error: saleError } = await prisma
+    const { data: sale, error: saleError } = await supabase
       .from('sales')
       .insert({
         pharmacy_id: req.user!.pharmacyId,
@@ -82,7 +83,7 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
     // Create SaleItems and update stock
     for (const item of items) {
       // Create sale item
-      const { error: itemError } = await prisma
+      const { error: itemError } = await supabase
         .from('sale_items')
         .insert({
           sale_id: sale.id,
@@ -98,7 +99,7 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
       }
 
       // Update branch stock
-      const { data: stock } = await prisma
+      const { data: stock } = await supabase
         .from('stocks')
         .select('id, quantity')
         .eq('medicine_id', item.medicineId)
@@ -106,7 +107,7 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
         .single();
 
       if (stock) {
-        await prisma
+        await supabase
           .from('stocks')
           .update({
             quantity: stock.quantity - item.quantity,
@@ -132,7 +133,7 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const { branchId, startDate, endDate } = req.query;
 
-    let query = prisma
+    let query = supabase
       .from('sales')
       .select(`
         *,
