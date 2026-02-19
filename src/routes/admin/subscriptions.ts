@@ -258,27 +258,37 @@ router.post('/applications/:id/approve', authenticate, authorize('admin'), async
       tin_number: application.tin_number,
     });
 
+    const pharmacyData: any = {
+      name: application.pharmacy_name,
+      address: application.pharmacy_address,
+      phone: application.pharmacy_phone,
+      email: application.pharmacy_email,
+      verification_status: 'verified',
+      subscription_status: 'trial',
+      is_active: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    // Only add license_number and tin_number if they exist
+    if (application.license_number) {
+      pharmacyData.license_number = application.license_number;
+    }
+    if (application.tin_number) {
+      pharmacyData.tin_number = application.tin_number;
+    }
+
+    console.log('[DEBUG] Final pharmacy data to insert:', pharmacyData);
+
     const { data: pharmacy, error: pharmacyError } = await supabase
       .from('pharmacies')
-      .insert({
-        name: application.pharmacy_name,
-        address: application.pharmacy_address,
-        phone: application.pharmacy_phone,
-        email: application.pharmacy_email,
-        license_number: application.license_number,
-        tin_number: application.tin_number,
-        verification_status: 'verified',
-        subscription_status: 'trial',
-        is_active: true,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
+      .insert(pharmacyData)
       .select()
       .single();
 
     if (pharmacyError || !pharmacy) {
       console.error('[DEBUG] Pharmacy creation error:', JSON.stringify(pharmacyError, null, 2));
-      return res.status(500).json({ error: 'Failed to create pharmacy' });
+      return res.status(500).json({ error: 'Failed to create pharmacy', details: pharmacyError?.message });
     }
 
     console.log('[DEBUG] Pharmacy created successfully with ID:', pharmacy.id);
