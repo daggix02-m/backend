@@ -159,6 +159,55 @@ router.get('/stocks', authenticate, async (req: AuthRequest, res: Response) => {
 });
 
 /**
+ * @route   GET /api/inventory/batches
+ * @desc    Get all medicine batches
+ * @access  Private
+ */
+router.get('/batches', authenticate, async (req: AuthRequest, res: Response) => {
+  console.log('[DIAGNOSTIC] GET /api/inventory/batches called');
+  console.log('[DIAGNOSTIC] Query params:', req.query);
+  console.log('[DIAGNOSTIC] User:', req.user);
+  
+  try {
+    const { branchId, medicineId } = req.query;
+    const pharmacyId = req.user!.pharmacyId;
+
+    let query = supabase
+      .from('medicine_batches')
+      .select(`
+        *,
+        medicine:medicines (name, sku, unit_type),
+        stocks (quantity, branch_id)
+      `);
+
+    if (medicineId) {
+      query = query.eq('medicine_id', medicineId);
+    }
+
+    const { data: batches, error } = await query.order('expiry_date', { ascending: true });
+
+    if (error) {
+      console.error('[DIAGNOSTIC] Error fetching batches:', error);
+      return res.status(500).json({ error: 'Failed to fetch batches' });
+    }
+
+    // Filter by pharmacy through stocks
+    let filteredBatches = (batches || []).filter((b: any) => {
+      if (branchId) {
+        return b.stocks?.branch_id === parseInt(branchId as string);
+      }
+      return true;
+    });
+
+    console.log('[DIAGNOSTIC] Returning batches:', filteredBatches.length);
+    res.json(filteredBatches);
+  } catch (error) {
+    console.error('[DIAGNOSTIC] Error fetching batches:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
  * @route   POST /api/inventory/batches
  * @desc    Receive new stock (Batch)
  * @access  Private (Admin/Manager/Pharmacist)
