@@ -249,6 +249,15 @@ router.post('/applications/:id/approve', authenticate, authorize('admin'), async
       return res.status(400).json({ error: 'Application must be submitted before approval' });
     }
 
+    console.log('[DEBUG] Creating pharmacy with data:', {
+      name: application.pharmacy_name,
+      address: application.pharmacy_address,
+      phone: application.pharmacy_phone,
+      email: application.pharmacy_email,
+      license_number: application.license_number,
+      tin_number: application.tin_number,
+    });
+
     const { data: pharmacy, error: pharmacyError } = await supabase
       .from('pharmacies')
       .insert({
@@ -268,9 +277,11 @@ router.post('/applications/:id/approve', authenticate, authorize('admin'), async
       .single();
 
     if (pharmacyError || !pharmacy) {
-      console.error('Error creating pharmacy:', pharmacyError);
+      console.error('[DEBUG] Pharmacy creation error:', JSON.stringify(pharmacyError, null, 2));
       return res.status(500).json({ error: 'Failed to create pharmacy' });
     }
+
+    console.log('[DEBUG] Pharmacy created successfully with ID:', pharmacy.id);
 
     const { data: managerRole } = await supabase
       .from('roles')
@@ -325,6 +336,19 @@ router.post('/applications/:id/approve', authenticate, authorize('admin'), async
         updated_at: new Date().toISOString(),
       });
 
+    console.log('[DEBUG] Creating branch with pharmacy_id:', pharmacy.id);
+    console.log('[DEBUG] Branch data to insert:', {
+      pharmacy_id: pharmacy.id,
+      name: 'Main Branch',
+      location: application.pharmacy_address,
+      phone: application.pharmacy_phone,
+      email: application.pharmacy_email,
+      is_active: true,
+      is_main_branch: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+
     const { data: branch, error: branchError } = await supabase
       .from('branches')
       .insert({
@@ -332,12 +356,20 @@ router.post('/applications/:id/approve', authenticate, authorize('admin'), async
         name: 'Main Branch',
         location: application.pharmacy_address,
         phone: application.pharmacy_phone,
-        status: 'active',
+        email: application.pharmacy_email,
+        is_active: true,
+        is_main_branch: true,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
       .select()
       .single();
+
+    if (branchError) {
+      console.error('[DEBUG] Branch creation error:', JSON.stringify(branchError, null, 2));
+    } else {
+      console.log('[DEBUG] Branch created successfully:', branch);
+    }
 
     if (branch && user) {
       await supabase.from('user_branches').insert({
