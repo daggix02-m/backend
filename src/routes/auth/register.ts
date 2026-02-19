@@ -322,6 +322,54 @@ router.post('/submit', async (req, res: Response) => {
   }
 });
 
+router.get('/status/email/:email', async (req, res: Response) => {
+  try {
+    const email = req.params.email as string;
+
+    const { data: application } = await supabase
+      .from('registration_applications')
+      .select(`
+        id,
+        email,
+        full_name,
+        phone,
+        pharmacy_name,
+        pharmacy_address,
+        current_step,
+        status,
+        selected_plan_id,
+        rejection_reason,
+        created_at,
+        submitted_at,
+        subscription_plans (id, name, price)
+      `)
+      .eq('email', email)
+      .maybeSingle();
+
+    if (!application) {
+      return res.status(404).json({ error: 'Application not found' });
+    }
+
+    res.json({
+      id: application.id,
+      email: application.email,
+      fullName: application.full_name,
+      phone: application.phone,
+      pharmacyName: application.pharmacy_name,
+      pharmacyAddress: application.pharmacy_address,
+      currentStep: application.current_step,
+      status: application.status,
+      selectedPlan: application.subscription_plans,
+      rejectionReason: application.rejection_reason,
+      createdAt: application.created_at,
+      submittedAt: application.submitted_at,
+    });
+  } catch (error) {
+    console.error('Status check error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 router.get('/status/:applicationId', async (req, res: Response) => {
   try {
     const applicationId = req.params.applicationId as string;
@@ -334,6 +382,7 @@ router.get('/status/:applicationId', async (req, res: Response) => {
         full_name,
         phone,
         pharmacy_name,
+        pharmacy_address,
         current_step,
         status,
         selected_plan_id,
@@ -355,52 +404,13 @@ router.get('/status/:applicationId', async (req, res: Response) => {
       fullName: application.full_name,
       phone: application.phone,
       pharmacyName: application.pharmacy_name,
+      pharmacyAddress: application.pharmacy_address,
       currentStep: application.current_step,
       status: application.status,
       selectedPlan: application.subscription_plans,
       rejectionReason: application.rejection_reason,
       createdAt: application.created_at,
       submittedAt: application.submitted_at,
-    });
-  } catch (error) {
-    console.error('Status check error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-router.get('/status/email/:email', async (req, res: Response) => {
-  try {
-    const email = req.params.email as string;
-
-    const { data: application } = await supabase
-      .from('registration_applications')
-      .select(`
-        id,
-        email,
-        full_name,
-        current_step,
-        status,
-        selected_plan_id,
-        rejection_reason,
-        created_at,
-        subscription_plans (id, name)
-      `)
-      .eq('email', email)
-      .single();
-
-    if (!application) {
-      return res.status(404).json({ error: 'Application not found' });
-    }
-
-    res.json({
-      id: application.id,
-      email: application.email,
-      fullName: application.full_name,
-      currentStep: application.current_step,
-      status: application.status,
-      selectedPlan: application.subscription_plans,
-      rejectionReason: application.rejection_reason,
-      createdAt: application.created_at,
     });
   } catch (error) {
     console.error('Status check error:', error);

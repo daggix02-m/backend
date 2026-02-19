@@ -18,7 +18,8 @@
    - [Admin Endpoints](#admin-endpoints)
    - [Admin Subscriptions](#admin-subscriptions)
    - [Admin Documents](#admin-documents)
-   - [Registration](#registration-public)
+    - [Applications](#applications)
+    - [Registration](#registration-public)
    - [Role-Based Endpoints](#role-based-endpoints)
 5. [Frontend Integration Guide](#frontend-integration-guide)
 6. [UI Update Procedures](#ui-update-procedures)
@@ -956,6 +957,237 @@ Reject a document.
 
 ---
 
+### Applications
+
+| Method | Endpoint | Access | Description |
+|--------|----------|--------|-------------|
+| GET | [`/applications`](#get-applications) | Admin | List all applications |
+| GET | [`/applications/:id`](#get-applicationsid) | Admin | Get single application |
+| POST | [`/applications`](#post-applications) | Admin | Submit new application |
+| PUT | [`/applications/:id/review`](#put-applicationsidreview) | Admin | Approve or reject application |
+| GET | [`/applications/by-email/:email`](#get-applicationsby-emailemail) | Public | Check application status by email |
+
+#### GET /applications
+
+List all registration applications with optional status filter.
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Query Parameters:**
+- `status` - Filter by status: `PENDING`, `APPROVED`, `REJECTED` (optional)
+
+**Response (200 OK):**
+```json
+[
+  {
+    "id": 1,
+    "status": "pending",
+    "email": "pharmacy@email.com",
+    "name": "John Doe",
+    "phone": "+251911000000",
+    "pharmacyName": "My Pharmacy",
+    "pharmacyAddress": "Addis Ababa, Ethiopia",
+    "pharmacyCity": "Addis Ababa, Ethiopia",
+    "pharmacyPhone": "+251911000001",
+    "licenseNumber": "LIC-001",
+    "fydaNumber": "TIN-001",
+    "licenseDocumentUrl": "https://...",
+    "fydaDocumentUrl": "https://...",
+    "planId": 1,
+    "planName": "Basic",
+    "submittedAt": "2024-01-15T08:00:00Z",
+    "reviewedAt": null,
+    "reviewedBy": null,
+    "rejectionReason": null
+  }
+]
+```
+
+#### GET /applications/:id
+
+Get a single application by ID.
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Response (200 OK):**
+```json
+{
+  "id": 1,
+  "status": "approved",
+  "email": "pharmacy@email.com",
+  "name": "John Doe",
+  "phone": "+251911000000",
+  "pharmacyName": "My Pharmacy",
+  "pharmacyAddress": "Addis Ababa, Ethiopia",
+  "pharmacyCity": "Addis Ababa, Ethiopia",
+  "pharmacyPhone": "+251911000001",
+  "licenseNumber": "LIC-001",
+  "fydaNumber": "TIN-001",
+  "licenseDocumentUrl": "https://...",
+  "fydaDocumentUrl": "https://...",
+  "planId": 1,
+  "planName": "Basic",
+  "submittedAt": "2024-01-15T08:00:00Z",
+  "reviewedAt": "2024-01-16T10:00:00Z",
+  "reviewedBy": {
+    "id": 1,
+    "fullName": "Admin User"
+  },
+  "rejectionReason": null
+}
+```
+
+#### POST /applications
+
+Create a new registration application with file uploads.
+
+**Headers:** 
+- `Authorization: Bearer <token>`
+- `Content-Type: multipart/form-data`
+
+**Form Data:**
+- `email` (string, required) - Applicant email
+- `password` (string, required) - Account password (min 8 characters)
+- `fullName` (string, required) - Full name
+- `phone` (string, optional) - Phone number
+- `pharmacyName` (string, required) - Pharmacy name
+- `pharmacyAddress` (string, required) - Pharmacy address
+- `pharmacyPhone` (string, optional) - Pharmacy phone
+- `pharmacyEmail` (string, optional) - Pharmacy email
+- `licenseNumber` (string, optional) - License number
+- `tinNumber` (string, optional) - TIN number
+- `planId` (number, required) - Selected subscription plan ID
+- `licenseDocument` (file, optional) - License document (PDF, JPEG, PNG)
+- `fydaDocument` (file, optional) - FYDA document (PDF, JPEG, PNG)
+
+**Response (201 Created):**
+```json
+{
+  "id": 1,
+  "status": "pending",
+  "email": "pharmacy@email.com",
+  "name": "John Doe",
+  "phone": "+251911000000",
+  "pharmacyName": "My Pharmacy",
+  "pharmacyAddress": "Addis Ababa, Ethiopia",
+  "pharmacyCity": "Addis Ababa, Ethiopia",
+  "pharmacyPhone": "+251911000001",
+  "licenseNumber": "LIC-001",
+  "fydaNumber": "TIN-001",
+  "licenseDocumentUrl": "https://...",
+  "fydaDocumentUrl": "https://...",
+  "planId": 1,
+  "planName": "Basic",
+  "submittedAt": "2024-01-15T08:00:00Z"
+}
+```
+
+#### PUT /applications/:id/review
+
+Approve or reject an application.
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Request Body (Approve):**
+```json
+{
+  "status": "APPROVED"
+}
+```
+
+**Request Body (Reject):**
+```json
+{
+  "status": "REJECTED",
+  "rejectionReason": "Invalid license document"
+}
+```
+
+**Response (200 OK) - Approved:**
+```json
+{
+  "id": 1,
+  "status": "approved",
+  "email": "pharmacy@email.com",
+  "name": "John Doe",
+  "pharmacyName": "My Pharmacy",
+  "planId": 1,
+  "planName": "Basic",
+  "submittedAt": "2024-01-15T08:00:00Z",
+  "reviewedAt": "2024-01-16T10:00:00Z",
+  "reviewedBy": {
+    "id": 1,
+    "fullName": "Admin User"
+  }
+}
+```
+
+**Response (200 OK) - Rejected:**
+```json
+{
+  "id": 1,
+  "status": "rejected",
+  "email": "pharmacy@email.com",
+  "name": "John Doe",
+  "pharmacyName": "My Pharmacy",
+  "planId": 1,
+  "planName": "Basic",
+  "submittedAt": "2024-01-15T08:00:00Z",
+  "reviewedAt": "2024-01-16T10:00:00Z",
+  "reviewedBy": {
+    "id": 1,
+    "fullName": "Admin User"
+  },
+  "rejectionReason": "Invalid license document"
+}
+```
+
+**Approval Process:**
+When approved, the system automatically:
+1. Creates a new pharmacy record
+2. Creates a user account with manager role
+3. Creates a 30-day trial subscription
+4. Creates a main branch
+5. Associates the user with the branch
+
+#### GET /applications/by-email/:email
+
+Check application status by email address (public endpoint).
+
+**Response (200 OK):**
+```json
+{
+  "id": 1,
+  "status": "pending",
+  "email": "pharmacy@email.com",
+  "name": "John Doe",
+  "phone": "+251911000000",
+  "pharmacyName": "My Pharmacy",
+  "pharmacyAddress": "Addis Ababa, Ethiopia",
+  "pharmacyCity": "Addis Ababa, Ethiopia",
+  "pharmacyPhone": "+251911000001",
+  "licenseNumber": "LIC-001",
+  "fydaNumber": "TIN-001",
+  "licenseDocumentUrl": "https://...",
+  "fydaDocumentUrl": "https://...",
+  "planId": 1,
+  "planName": "Basic",
+  "submittedAt": "2024-01-15T08:00:00Z",
+  "reviewedAt": null,
+  "reviewedBy": null,
+  "rejectionReason": null
+}
+```
+
+**Response (404 Not Found):**
+```json
+{
+  "error": "Application not found"
+}
+```
+
+---
+
 ## Frontend Integration Guide
 
 ### Setting Up API Client
@@ -1312,6 +1544,12 @@ graph TD
     M --> N{Approved?}
     N -->|Yes| O[Create pharmacy + user]
     N -->|No| P[Mark as rejected]
+    
+    Q[Admin creates application] --> R[POST /applications]
+    R --> S[Admin reviews]
+    S --> T{Approved?}
+    T -->|Yes| U[Auto-create pharmacy + user + subscription]
+    T -->|No| V[Update with rejection reason]
 ```
 
 ---
