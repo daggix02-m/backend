@@ -1,6 +1,18 @@
-import { supabase } from './supabase';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 const BUCKET_NAME = 'pharmacy-documents';
+
+const supabaseUrl = process.env.SUPABASE_URL || 'https://qclrrjhynjdnkrbhvmrb.supabase.co';
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+const getStorageClient = (): SupabaseClient => {
+  if (!supabaseServiceKey) {
+    throw new Error('SUPABASE_SERVICE_ROLE_KEY environment variable is required for file uploads');
+  }
+  return createClient(supabaseUrl, supabaseServiceKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+};
 
 export interface UploadResult {
   url: string;
@@ -13,6 +25,7 @@ export const uploadFile = async (
   folder: string,
   customName?: string
 ): Promise<UploadResult> => {
+  const supabase = getStorageClient();
   const fileExt = file.originalname.split('.').pop();
   const fileName = customName || `${Date.now()}-${Math.random().toString(36).substring(7)}`;
   const filePath = `${folder}/${fileName}.${fileExt}`;
@@ -21,7 +34,7 @@ export const uploadFile = async (
     .from(BUCKET_NAME)
     .upload(filePath, file.buffer, {
       contentType: file.mimetype,
-      upsert: false,
+      upsert: true,
     });
 
   if (error) {
@@ -41,6 +54,7 @@ export const uploadFile = async (
 };
 
 export const deleteFile = async (filePath: string): Promise<void> => {
+  const supabase = getStorageClient();
   const { error } = await supabase.storage
     .from(BUCKET_NAME)
     .remove([filePath]);
@@ -52,6 +66,7 @@ export const deleteFile = async (filePath: string): Promise<void> => {
 };
 
 export const getFileUrl = (filePath: string): string => {
+  const supabase = getStorageClient();
   const { data } = supabase.storage
     .from(BUCKET_NAME)
     .getPublicUrl(filePath);
@@ -60,6 +75,7 @@ export const getFileUrl = (filePath: string): string => {
 };
 
 export const getSignedUrl = async (filePath: string, expiresIn: number = 3600): Promise<string> => {
+  const supabase = getStorageClient();
   const { data, error } = await supabase.storage
     .from(BUCKET_NAME)
     .createSignedUrl(filePath, expiresIn);
@@ -73,6 +89,7 @@ export const getSignedUrl = async (filePath: string, expiresIn: number = 3600): 
 };
 
 export const listFiles = async (folder: string): Promise<string[]> => {
+  const supabase = getStorageClient();
   const { data, error } = await supabase.storage
     .from(BUCKET_NAME)
     .list(folder);
