@@ -171,38 +171,128 @@ router.get('/batches', authenticate, async (req: AuthRequest, res: Response) => 
   try {
     const { branchId, medicineId } = req.query;
     const pharmacyId = req.user!.pharmacyId;
+    
+    console.log('[DIAGNOSTIC] Pharmacy ID:', pharmacyId);
+    console.log('[DIAGNOSTIC] Branch ID:', branchId);
+    console.log('[DIAGNOSTIC] Medicine ID:', medicineId);
+
+    // First, get all branches for this pharmacy
+    const { data: pharmacyBranches, error: branchesError } = await supabase
+      .from('branches')
+      .select('id')
+      .eq('pharmacy_id', pharmacyId);
+
+    if (branchesError) {
+      console.error('[DIAGNOSTIC] Error fetching branches:', branchesError);
+      return res.status(500).json({ error: 'Failed to fetch branches' });
+    }
+
+    const branchIds = pharmacyBranches?.map((b: any) => b.id) || [];
+    console.log('[DIAGNOSTIC] Pharmacy branch IDs:', branchIds);
 
     let query = supabase
       .from('medicine_batches')
       .select(`
         *,
         medicine:medicines (name, sku, unit_type),
-        stocks (quantity, branch_id)
+        stocks (quantity, branch_id, pharmacy_id)
       `);
-
+ 
     if (medicineId) {
       query = query.eq('medicine_id', medicineId);
     }
-
+ 
     const { data: batches, error } = await query.order('expiry_date', { ascending: true });
-
+ 
     if (error) {
       console.error('[DIAGNOSTIC] Error fetching batches:', error);
       return res.status(500).json({ error: 'Failed to fetch batches' });
     }
-
+    
+    console.log('[DIAGNOSTIC] Total batches fetched:', batches?.length || 0);
+ 
     // Filter by pharmacy through stocks
     let filteredBatches = (batches || []).filter((b: any) => {
-      if (branchId) {
-        return b.stocks?.branch_id === parseInt(branchId as string);
+      // Check if batch has stocks
+      if (!b.stocks || b.stocks.length === 0) {
+        console.log('[DIAGNOSTIC] Batch has no stocks:', b.id);
+        return false;
       }
+
+      const stock = b.stocks[0];
+      console.log('[DIAGNOSTIC] Batch stock:', stock);
+      
+      // Check if stock belongs to pharmacy
+      if (stock.pharmacy_id !== pharmacyId) {
+        console.log('[DIAGNOSTIC] Batch not in pharmacy:', b.id, stock.pharmacy_id, pharmacyId);
+        return false;
+      }
+      
+      // Filter by branch if specified
+      if (branchId) {
+        const branchIdNum = parseInt(branchId as string);
+        if (stock.branch_id !== branchIdNum) {
+          console.log('[DIAGNOSTIC] Batch not in branch:', b.id, stock.branch_id, branchIdNum);
+          return false;
+        }
+      }
+      
       return true;
     });
-
-    console.log('[DIAGNOSTIC] Returning batches:', filteredBatches.length);
+ 
+    console.log('[DIAGNOSTIC] Returning filtered batches:', filteredBatches.length);
     res.json(filteredBatches);
   } catch (error) {
     console.error('[DIAGNOSTIC] Error fetching batches:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @route   GET /api/inventory/batches/expiring
+ * @desc    Get expiring medicine batches
+ * @access  Private
+ */
+router.get('/batches/expiring', authenticate, async (req: AuthRequest, res: Response) => {
+  console.log('[DIAGNOSTIC] GET /api/inventory/batches/expiring called');
+  console.log('[DIAGNOSTIC] Query params:', req.query);
+  console.log('[DIAGNOSTIC] User:', req.user);
+  
+  try {
+    const days = parseInt(req.query.days as string) || 90;
+    const pharmacyId = req.user!.pharmacyId;
+
+    // Calculate expiry date threshold
+    const expiryThreshold = new Date();
+    expiryThreshold.setDate(expiryThreshold.getDate() + days);
+
+    console.log('[DIAGNOSTIC] Expiry threshold:', expiryThreshold.toISOString());
+
+    const { data: batches, error } = await supabase
+      .from('medicine_batches')
+      .select(`
+        *,
+        medicine:medicines (name, sku, unit_type),
+        stocks (quantity, branch_id, pharmacy_id)
+      `)
+      .lt('expiry_date', expiryThreshold.toISOString())
+      .gte('expiry_date', new Date().toISOString())
+      .order('expiry_date', { ascending: true });
+
+    if (error) {
+      console.error('[DIAGNOSTIC] Error fetching expiring batches:', error);
+      return res.status(500).json({ error: 'Failed to fetch expiring batches' });
+    }
+
+    // Filter by pharmacy through stocks
+    const filteredBatches = (batches || []).filter((b: any) => 
+      b.stocks?.pharmacy_id === pharmacyId
+    );
+
+    console.log('[DIAGNOSTIC] Returning expiring batches:', filteredBatches.length);
+    res.json(filteredBatches);
+  } catch (error) {
+    console.error('[DIAGNOSTIC] Error fetching expiring batches:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

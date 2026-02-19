@@ -22,6 +22,9 @@ import pharmacistRoutes from './routes/pharmacist';
 import cashierRoutes from './routes/cashier';
 import importRoutes from './routes/import';
 import uploadRoutes from './routes/upload';
+import prescriptionsRoutes from './routes/prescriptions';
+import customersRoutes from './routes/customers';
+import reportsRoutes from './routes/reports';
 import { authenticate } from './middleware/auth';
 import { authRateLimiter } from './middleware/rateLimit';
 import { config } from './config';
@@ -50,17 +53,20 @@ if (config.nodeEnv === 'development') {
 
 // Health check
 app.get('/health', async (req: Request, res: Response) => {
+  console.log('[DIAGNOSTIC] Health check requested');
   try {
     const { error } = await supabase.from('users').select('id').limit(1);
     
     if (error) throw error;
     
+    console.log('[DIAGNOSTIC] Health check - database connected');
     res.json({ 
       status: 'ok', 
       timestamp: new Date().toISOString(),
       database: 'connected'
     });
   } catch (error) {
+    console.error('[DIAGNOSTIC] Health check - database disconnected:', error);
     res.status(503).json({ 
       status: 'error', 
       timestamp: new Date().toISOString(),
@@ -97,6 +103,9 @@ app.use('/api/sales', salesRoutes);
 app.use('/api/refunds', refundRoutes);
 app.use('/api/shifts', shiftRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/prescriptions', prescriptionsRoutes);
+app.use('/api/customers', customersRoutes);
+app.use('/api/reports', reportsRoutes);
 
 // Role-based API Routes (for frontend integration)
 app.use('/api/admin', adminRoutes);
