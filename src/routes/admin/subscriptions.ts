@@ -332,8 +332,7 @@ router.post('/applications/:id/approve', authenticate, authorize('admin'), async
         name: 'Main Branch',
         location: application.pharmacy_address,
         phone: application.pharmacy_phone,
-        is_main_branch: true,
-        is_active: true,
+        status: 'active',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
